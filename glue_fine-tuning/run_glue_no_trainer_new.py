@@ -76,20 +76,14 @@ task_to_keys = {
 
 ###
 def check_grad_identity(model):
-    """
-    检查所有 DDP 不同机器上的模型对应的梯度是否相同。
-    """
     for name, param in model.named_parameters():
         if param.grad is not None:
-            # 获取当前进程的梯度
             grad = param.grad.clone()
 
-            # 使用 all_reduce 聚合所有进程的梯度
             dist.all_reduce(grad, op=dist.ReduceOp.SUM)
 
             grad_mean = grad / dist.get_world_size()
 
-            # 检查当前进程的梯度是否与平均梯度相同
             if not torch.allclose(param.grad, grad_mean, atol=1e-6):
                 logger.info(f"Gradient mismatch in parameter: {name}")
                 return False
@@ -165,7 +159,7 @@ def parse_args():
         help="Total number of training steps to perform. If provided, overrides num_train_epochs.",
     )
     parser.add_argument(
-        "--gradient_accumulation_steps",  # 每多少个 batch 才执行一次 optimizer.step()梯度更新，用于显存不够时的梯度累积。实际上相当于扩大 batch size
+        "--gradient_accumulation_steps", 
         type=int,
         default=1,
         help="Number of updates steps to accumulate before performing a backward/update pass.",
@@ -519,10 +513,9 @@ def main():
     # Afterwards we recalculate our number of training epochs
     args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
 
-    ### 注册通信压缩 hook：
     # Compressor
     process_group = dist.distributed_c10d._get_default_group()
-    logger.info(f"args.compressor is {args.compressor}----------------------------------------------")
+    logger.info(f"args.compressor is {args.compressor}")
     register_comm_hook_for_ddp_model(model, process_group, args, optimizer=optimizer)
 
     # Figure out how many steps we should save the Accelerator states
@@ -605,8 +598,8 @@ def main():
     # update the progress_bar if load from checkpoint
     progress_bar.update(completed_steps)
 
-    start_time = time.time()  # 开始计时
-    print('训练开始！！！！！')
+    start_time = time.time() 
+    print('Training Begins！！！！！')
 
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
@@ -625,10 +618,10 @@ def main():
             if args.with_tracking:
                 total_loss += loss.detach().float()
             loss = loss / args.gradient_accumulation_steps
-            accelerator.backward(loss) # accelerator自动处理分布式反向传播
+            accelerator.backward(loss) 
             if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
                 optimizer.step()
-                if args.check_grad: # 聚合所有节点的梯度后取平均，再保险地检查梯度是否相等
+                if args.check_grad: 
                     check_grad_identity(model)
                 lr_scheduler.step()
                 optimizer.zero_grad()
@@ -671,7 +664,7 @@ def main():
                 predictions = accelerator.gather_for_metrics(predictions)
                 references = accelerator.gather_for_metrics(batch["labels"])
             else:
-                predictions, references = accelerator.gather((predictions, batch["labels"])) # accelerator进行跨进程的数据聚合
+                predictions, references = accelerator.gather((predictions, batch["labels"])) 
                 # If we are in a multiprocess environment, the last batch has duplicates
                 if accelerator.num_processes > 1:
                     if step == len(eval_dataloader) - 1:
@@ -721,8 +714,8 @@ def main():
                 output_dir = os.path.join(args.output_dir, output_dir)
             accelerator.save_state(output_dir)
 
-    end_time = time.time()  # 结束计时
-    print('训练结束！！！！！')
+    end_time = time.time()  
+    print('Traing Ends！！！！！')
     logger.info(f"Mixed Precision Mode: {accelerator.mixed_precision}")
     total_seconds = end_time - start_time
     minutes, seconds = divmod(int(total_seconds), 60)
