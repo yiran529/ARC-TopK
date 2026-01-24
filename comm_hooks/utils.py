@@ -6,7 +6,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def _get_allgather_out_list(all_gather_in_list, world_size): # 为了 dist.all_gather 准备输出用的空列表（会返回一个长度为 world_size 的列表 out_list，每个元素是一个和输入张量一样形状的数据容器）
+def _get_allgather_out_list(all_gather_in_list, world_size): 
     out_list = [
         torch.zeros_like(
             all_gather_in_list,
@@ -22,7 +22,7 @@ class HookState:
     
     def __init__(self, process_group: dist.ProcessGroup): 
         self.process_group = process_group 
-        self.start_compress_iter = 0 # start_compress_iter	表示从哪一轮迭代开始启用压缩（之前是warmup）
+        self.start_compress_iter = 0 # start_compress_iter
         self.iter = 0 
 
         self.total_bit_before_compression = 0 
@@ -37,19 +37,19 @@ class HookState:
 
         self.comm_bits_this_round = 0
 
-    def init_momentum_field(self, param_state, beta1): # 初始化动量信息
+    def init_momentum_field(self, param_state, beta1):
         self.param_state = param_state
         self.beta1 = beta1
-        self.compress_momentum = True # 开启动量压缩
+        self.compress_momentum = True 
 
     def maybe_accumulate_momentum_on_bucket(self, bucket: dist.GradBucket):
         if not self.compress_momentum: 
             return
         if self.iter >= self.start_compress_iter and not self.adam_freeze_key:
-            self.adam_freeze_key = True # 如果启用了动量压缩且达到 start_compress_iter 后，就冻结二阶动量，只压缩一阶动量。
+            self.adam_freeze_key = True 
             logger.info(f"Freeze the second momentum of Adam optimizer after {self.iter}(included) steps")
         if self.adam_freeze_key:
-            self.accumulate_momentum_on_bucket(bucket) # 调用下面的动量累积函数
+            self.accumulate_momentum_on_bucket(bucket)
 
     def accumulate_momentum_on_bucket(self, bucket: dist.GradBucket):
         if not self.compress_momentum:
@@ -60,9 +60,8 @@ class HookState:
         parameters, gradients = bucket.parameters(), bucket.gradients()
         assert len(parameters) == len(gradients), "The number of parameters and gradients should be the same."
         for tensor, grad in zip(parameters, gradients):
-            state = self.param_state[tensor] # param_state[tensor]是一个字典，保存动量等信息，类似于 {"exp_avg": ..., "exp_avg_sq": ...}
-            grad.mul_(1 - self.beta1).add_(state['exp_avg'], alpha=self.beta1) # state['exp_avg']是一阶动量，也就是 Adam 优化器中的 m_t
-            # 这相当于grad = (1 - beta1) * grad + beta1 * exp_avg，但是使用了 mul_ 和 add_，是原地操作，减少了内存开销。add_(state['exp_avg'], alpha=self.beta1)：将动量 exp_avg 按权重 β_1 加到 grad 上。
+            state = self.param_state[tensor] 
+            grad.mul_(1 - self.beta1).add_(state['exp_avg'], alpha=self.beta1)
 
     def maybe_increase_iter(self, bucket):
         """Track iterations and trigger log message at start of local SGD."""
@@ -102,7 +101,7 @@ def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None)
             start_compress_iter=args.start_compress_iter,
             random_seed=args.seed,
         )
-        model.register_comm_hook(hook_state, sparse_hook_sync) # 注册通信hook
+        model.register_comm_hook(hook_state, sparse_hook_sync)
   
 
     elif args.compressor == "group_topk_no_reshape" :
@@ -116,17 +115,17 @@ def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None)
             start_compress_iter=args.start_compress_iter,
             compress_ratio=args.compress_ratio,
         )
-        model.register_comm_hook(hook_state, group_topk_hook) # 注册通信hook
+        model.register_comm_hook(hook_state, group_topk_hook) 
 
     elif args.compressor == 'noop': 
         from comm_hooks.debugging_hooks import noop_hook
-        model.register_comm_hook(None, noop_hook) # 注册通信hook
+        model.register_comm_hook(None, noop_hook) 
 
-    elif args.compressor == 'none' : # 不压缩（即默认的 AllReduce + HookState 支持）
+    elif args.compressor == 'none' :
         from comm_hooks.default_hooks import my_allreduce_hook
         hook_state = HookState(process_group) 
         hook_state.start_compress_iter = args.start_compress_iter
-        model.register_comm_hook(hook_state, my_allreduce_hook) # 注册通信hook
+        model.register_comm_hook(hook_state, my_allreduce_hook) 
     else:
         raise ValueError(f"Compressor {args.compressor} not supported.")
     
@@ -161,7 +160,6 @@ def add_comm_hook_args(parser):
         help="Set the error feedback to use.",
     )
 
-    # 稀疏压缩参数
     parser.add_argument(
         "--sparse_type",
         type=str,
@@ -184,7 +182,7 @@ def add_comm_hook_args(parser):
     )
     
 
-    ### check whether the gradients are identical across all processes（梯度一致性检查）
+    ### check whether the gradients are identical across all processes
     parser.add_argument(
         "--check_grad",
         action="store_true",
@@ -193,15 +191,15 @@ def add_comm_hook_args(parser):
     )
  
 
-def dtype_bits(tensor): # 返回 tensor 的 单个元素占用的位数（bit）
+def dtype_bits(tensor): 
     dtype = tensor.dtype
-    if dtype.is_floating_point: # 浮点类型（float32、float64）使用 torch.finfo 获取其位数
+    if dtype.is_floating_point: 
         return torch.finfo(dtype).bits
-    elif dtype.is_complex: # 复数（如 complex64、complex128），每个复数由两个浮点组成
+    elif dtype.is_complex:
         return torch.finfo(dtype).bits * 2  # Complex numbers have twice the bits
     elif dtype == torch.bool:
         return 1
-    elif "int" in str(dtype): # 整型使用 torch.iinfo 获取其位数（如 int8, int32, int64）
+    elif "int" in str(dtype): 
         return torch.iinfo(dtype).bits
     else:
         raise ValueError(f"Unsupported dtype: {dtype}")

@@ -17,13 +17,8 @@ def group_topk_project_and_select(tensor, r, compress_ratio, group):
 
     d = tensor.numel()
     if tensor.dim()==1:  
-        # values = tensor.flatten()  # 只有一维就不压了，直接传过去。
-        # indices = torch.arange(d, device=tensor.device).flatten()
-        # P_bits = 0
-        # comm_bits = tensor_bits(values)
-        # return values.clone(), indices, P_bits, comm_bits
         
-        k = max(1, int(d * compress_ratio)) # 一维也压一下
+        k = max(1, int(d * compress_ratio))
 
         P_local = tensor
 
@@ -46,7 +41,7 @@ def group_topk_project_and_select(tensor, r, compress_ratio, group):
         m = tensor.shape[1]
         k = max(1, int(n * compress_ratio))
     
-        V = torch.randn(m, r, device=tensor.device, dtype=tensor.dtype) # dtype跟随 tensor
+        V = torch.randn(m, r, device=tensor.device, dtype=tensor.dtype)
         # print(f"tensor.shape = {tensor.shape}, V.shape = {V.shape}")
         if V.dtype != tensor.dtype or V.device != tensor.device:
             V = V.to(device=tensor.device, dtype=tensor.dtype)
@@ -68,7 +63,7 @@ def group_topk_project_and_select(tensor, r, compress_ratio, group):
     
         # print(f"indices={indices}")
         comm_bits = tensor_bits(tensor[topk_indices])
-        return tensor[topk_indices].flatten().clone(), indices , P_bits, comm_bits # 返回选中行（压缩值）
+        return tensor[topk_indices].flatten().clone(), indices , P_bits, comm_bits 
     else:
         t = tensor.shape[-1]
         m = 2 * t * t
@@ -99,7 +94,7 @@ def group_topk_project_and_select(tensor, r, compress_ratio, group):
         # print(f"values.dtype={tensor_2D[topk_indices].dtype}")
         # print(f"indices={indices}")
         comm_bits = tensor_bits(tensor_2D[topk_indices])
-        return tensor_2D[topk_indices].flatten().clone(), indices, P_bits, comm_bits  # 返回选中行（压缩值）
+        return tensor_2D[topk_indices].flatten().clone(), indices, P_bits, comm_bits 
 
 
 
@@ -116,16 +111,16 @@ def compress_tensor_to_memory(tensors, k_list, values_memory, indices_memory, co
         values_memory[offset:offset+k] = values
         indices_memory[offset:offset+k] = indices.to(torch.int) 
         offset += k
-        bits_sum += P_bits + comm_bits # bits_sum是一个GPU的一个bucket的通信量。
+        bits_sum += P_bits + comm_bits 
 
 
         if use_error_feedback == "ef14":
             # input_tensor = \nabla F_i + E_{i-1} - C[\nabla F_i + E_{i-1}]
-            tensor.view(-1)[indices] = 0  # C内的部分设成0，处理后的 tensor = \nabla F_i + E_{i-1} - C[\nabla F_i + E_{i-1}]
+            tensor.view(-1)[indices] = 0  
         elif use_error_feedback == "ef21":
             tensor.zero_()
             # input_tensor = C[\nabla F_i - E_{i-1}]
-            tensor.view(-1)[indices] = values # 处理后的 tensor = C[\nabla F_i - E_{i-1}]，不会改变 tensor 本身的形状
+            tensor.view(-1)[indices] = values
     return values_memory, indices_memory, bits_sum
 
 def decompress_memory_to_tensor_and_aggregate(tensors, k_list, values_memory, indices_memory):
@@ -160,13 +155,11 @@ class GroupTopKState(HookState):
         self.seed = seed
 
         # error feedback
-        self.use_error_feedback = use_error_feedback # EF开关
+        self.use_error_feedback = use_error_feedback 
         self.error_dict: Dict[int, torch.Tensor] = {}
         self.global_error_dict: Dict[int, torch.Tensor] = {}
         self.error_decay = error_decay  
 
-
-        # 设置统一的 RNG，用于 sample 每一轮的投影矩阵 seed
         self.rng = torch.Generator()
         self.rng.manual_seed(seed)
 
@@ -202,7 +195,7 @@ def group_topk_hook(
     process_group = state.process_group
     group_to_use = process_group if process_group is not None else dist.group.WORLD
     world_size = group_to_use.size()
-    rank = dist.get_rank(group=group_to_use) # 获取 当前进程 在 group_to_use 这个通信组中的 rank。（process_group 就是指的只有一个通信组）
+    rank = dist.get_rank(group=group_to_use)
 
     # The input tensor is a flattened 1D tensor.
     input_tensor = bucket.buffer()  
@@ -214,7 +207,6 @@ def group_topk_hook(
         state.maybe_increase_iter(bucket)
         return default_hooks._allreduce_fut(group_to_use, input_tensor, state)
     
-    # group_topk 压缩器压缩 -----------------------------------------------------------------------------------
     device = tensors[0].device  
     dtype = tensors[0].dtype
 
@@ -222,10 +214,10 @@ def group_topk_hook(
     bucket_index = bucket.index() 
     total_length = input_tensor.shape[0]
     if state.use_error_feedback == "ef14":
-        if bucket_index in state.error_dict:  # 误差缓存已存在，即之前已经累积过误差，所以现在把上轮没发送出去的部分 $E_{i-1}$ 加回
+        if bucket_index in state.error_dict:
             # input_tensor = \nabla F_i + E_{i-1}
             input_tensor.add_(state.error_dict[bucket_index], alpha=1.0)
-        else: # 还没有误差缓存（第一次通信该 bucket），create a zero tensor.
+        else:
             logger.info("A zero tensor of length %s that represents local error is created.", total_length)
             state.error_dict[bucket_index] = torch.zeros(total_length, device=device, dtype=dtype)
     elif state.use_error_feedback == "ef21":
@@ -239,18 +231,17 @@ def group_topk_hook(
             state.error_dict[bucket_index] = torch.clone(input_tensor).detach()
             # allreduce \nabla F_0
             state.comm_bits_this_round += tensor_bits(input_tensor)
-            dist.all_reduce(input_tensor, group=group_to_use, async_op=False) # async_op=False 表示会阻塞程序执行，直到 all_reduce 完全完成。
+            dist.all_reduce(input_tensor, group=group_to_use, async_op=False) 
             input_tensor.div_(world_size)
             # \overline{E_0} = \overline{\nabla F_0}
             state.global_error_dict[bucket_index] = torch.clone(input_tensor).detach()
             # reset the full input tensor
-            state.maybe_increase_iter(bucket) # 判断是否需要将当前迭代轮数 state.iter 加 1（有时一个迭代（state.iter）可能会对应多个 bucket，而我们只在所有 bucket 都完成一次同步后再加一次迭代数）
+            state.maybe_increase_iter(bucket)
             fut: torch.futures.Future[torch.Tensor] = torch.futures.Future()
             fut.set_result(input_tensor)
             return fut
 
-    # 压缩: 
-    # sample 本轮投影 seed，并生成 V
+
     seed = torch.randint(0, 1_000_000_000, (1,), generator=state.rng).item()
     torch.manual_seed(seed)
   
@@ -258,15 +249,14 @@ def group_topk_hook(
 
     k_list = [cal_k(state, tensor) for tensor in tensors]
 
-    sum_k = sum(k_list) # k_list中元素求和即为values_memory和indices_memory的长度。
+    sum_k = sum(k_list) 
 
-    values_memory = torch.empty(sum_k, dtype=dtype, device=device) # 初始化为0
+    values_memory = torch.empty(sum_k, dtype=dtype, device=device) 
     indices_memory = torch.empty(sum_k, dtype=torch.int, device=device)
     _, _, bits_sum = compress_tensor_to_memory(tensors=tensors, k_list=k_list, values_memory=values_memory, indices_memory=indices_memory, compress_ratio=state.compress_ratio, r=state.r, group=group_to_use, use_error_feedback=state.use_error_feedback)
 
    
 
-    # 更新一下 state.error_dict
     if state.use_error_feedback == "ef14":
         # E_i = \nabla F_i + E_{i-1} - C[\nabla F_i + E_{i-1}]
         state.error_dict[bucket_index].copy_(input_tensor)              
@@ -274,9 +264,8 @@ def group_topk_hook(
         # E_i = E_{i-1} + C[\nabla F_i - E_{i-1}]
         state.error_dict[bucket_index].add_(input_tensor)    
         
-    # Allreduce，并解压回原梯度张量
-    state.comm_bits_this_round += 2 *(world_size -1) * bits_sum # 全局通信bits数
-    # print(f"bucket_index{bucket_index}rank{rank}已加进state.comm_bits_this_round{state.comm_bits_this_round}, bits_sum={bits_sum}")
+    # Allreduce
+    state.comm_bits_this_round += 2 *(world_size -1) * bits_sum 
     dist.all_reduce(values_memory, group=group_to_use, async_op=False)
     values_memory.div_(world_size)
 
@@ -284,7 +273,6 @@ def group_topk_hook(
     input_tensor.zero_() 
     decompress_memory_to_tensor_and_aggregate(tensors=tensors, k_list=k_list, values_memory=values_memory, indices_memory=indices_memory)
 
-    # 更新 global_error_dict
     if state.use_error_feedback == "ef21":
         state.global_error_dict[bucket_index].add_(input_tensor) # \overline{E_i} = \overline{E_{i-1}} + \overline{C[\nabla F_i - E_{i-1}]}
         input_tensor.copy_(state.global_error_dict[bucket_index])

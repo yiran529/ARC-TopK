@@ -19,15 +19,13 @@ def _allreduce_fut(
     group_to_use = process_group if process_group is not None else dist.group.WORLD
     world_size = group_to_use.size() 
 
-    # Apply the division first to avoid overflow, especially for FP16.（先除以进程数再进行 all_reduce 可以避免一些精度问题，特别是 float16（容易溢出））
+    # Apply the division first to avoid overflow, especially for FP16.
     tensor.div_(group_to_use.size())
 
     if hook_state is not None:
         
-        # AllReduce 通信量计算
         comm_bits = 2 * (world_size - 1) * tensor_bits(tensor)
         
-        # 累加到全局统计量
         hook_state.comm_bits_this_round += comm_bits
 
     return (

@@ -17,7 +17,7 @@ def sparsify(tensor, compress_ratio, random=False):
     tensor = tensor.flatten()
     k = max(1, int(tensor.numel() * compress_ratio))
     if random: 
-        indices = torch.randperm(tensor.numel(), device=tensor.device)[:k] # indices 形状(k,)
+        indices = torch.randperm(tensor.numel(), device=tensor.device)[:k]
         indices=indices.to(torch.int32)
         values = tensor[indices].clone()
         # values = torch.gather(tensor, 0, indices) 
@@ -33,7 +33,7 @@ def sparsify(tensor, compress_ratio, random=False):
 
     return values, indices, comm_bits 
 
-def sparsify_by_row(tensor, compress_ratio, random=False): # 每一行独立做 TopK 或 RandK
+def sparsify_by_row(tensor, compress_ratio, random=False):
 
     if len(tensor.shape) == 1: 
         return sparsify(tensor, compress_ratio)
@@ -43,7 +43,7 @@ def sparsify_by_row(tensor, compress_ratio, random=False): # 每一行独立做 
 
         if random:
             # hope that the random perm for each row is different, shape [num_rows, k]
-            indices = torch.stack([torch.randperm(num_cols, device=tensor.device)[:k] for _ in range(num_rows)], dim=0) # 每行的indices不一样。
+            indices = torch.stack([torch.randperm(num_cols, device=tensor.device)[:k] for _ in range(num_rows)], dim=0)
         else:
             # get the topk values and indices for each row, shape [num_rows, k]
             _, indices = torch.topk(tensor.abs(), k, dim=1, sorted=False) 
@@ -75,7 +75,6 @@ def sparsify_by_column(tensor, compress_ratio, random=False):
         return torch.flatten(values), torch.flatten(indices)
 
 def cal_k(state, tensor): 
-    # 使用动态压缩比
     current_compress_ratio = state.get_current_compress_ratio()
 
     return max(1, int(tensor.numel() * current_compress_ratio))
@@ -100,16 +99,16 @@ def compress_tensor_to_memory(tensors, k_list, values_memory, indices_memory, sp
         values_memory[offset:offset+k] = values
         indices_memory[offset:offset+k] = indices.to(torch.int) 
         offset += k
-        bits_sum += comm_bits  # bits_sum是一个GPU的一个bucket的通信量。
+        bits_sum += comm_bits 
 
 
         if use_error_feedback == "ef14":
             # input_tensor = \nabla F_i + E_{i-1} - C[\nabla F_i + E_{i-1}]
-            tensor.view(-1)[indices] = 0  # C内的部分设成0，处理后的 tensor = \nabla F_i + E_{i-1} - C[\nabla F_i + E_{i-1}]
+            tensor.view(-1)[indices] = 0 
         elif use_error_feedback == "ef21":
             tensor.zero_()
             # input_tensor = C[\nabla F_i - E_{i-1}]
-            tensor.view(-1)[indices] = values # 处理后的 tensor = C[\nabla F_i - E_{i-1}]，不会改变 tensor 本身的形状
+            tensor.view(-1)[indices] = values 
     return values_memory, indices_memory, bits_sum
 
 def decompress_memory_to_tensor_and_aggregate(tensors, k_list, values_memory, indices_memory, aggregate=True):
@@ -135,10 +134,10 @@ class SparseState(HookState):
         start_compress_iter: int = 2,  
         sparse_type: str = "row",
         random: bool = False,
-        use_error_feedback: str = "noef",  # 默认是noef
+        use_error_feedback: str = "noef",
         random_seed: int = 0,
-        gradual_compression=True,  # 新增：渐进式压缩
-        warmup_iters=100          # 新增：压缩预热步数
+        gradual_compression=True,
+        warmup_iters=100  
     ):
         super().__init__(process_group)
         self.total_bit_before_compression = 0
@@ -147,8 +146,8 @@ class SparseState(HookState):
         self.base_compress_ratio = compress_ratio
         self.compress_ratio = compress_ratio
 
-        self.gradual_compression = gradual_compression # 新增
-        self.warmup_iters = start_compress_iter + warmup_iters # 新增
+        self.gradual_compression = gradual_compression
+        self.warmup_iters = start_compress_iter + warmup_iters
 
         self.iter = 0
         self.start_compress_iter = start_compress_iter
@@ -164,23 +163,19 @@ class SparseState(HookState):
         self.rng.manual_seed(random_seed)
         
         # error feedback
-        self.use_error_feedback = use_error_feedback # EF开关
+        self.use_error_feedback = use_error_feedback
         self.error_dict: Dict[int, torch.Tensor] = {}
         self.global_error_dict: Dict[int, torch.Tensor] = {}
         self.random_seed = random_seed
 
-        # 新增：压缩切换的平滑处理
         self.compression_started = False
 
     def get_current_compress_ratio(self):
-        """计算当前的压缩比，支持渐进式压缩"""
         if not self.gradual_compression or not self.compression_started:
             return self.base_compress_ratio
             
-        # 渐进式压缩：从较高的压缩比逐渐降低到目标压缩比
         compress_progress = self.iter - self.start_compress_iter
         if compress_progress < self.warmup_iters:
-            # 从 0.8 渐进到 base_compress_ratio
             start_ratio = 0.8
             progress = compress_progress / self.warmup_iters
             current_ratio = start_ratio - (start_ratio - self.base_compress_ratio) * progress
@@ -221,7 +216,6 @@ def sparse_hook_sync(
         state.maybe_increase_iter(bucket)
         return default_hooks._allreduce_fut(group_to_use, input_tensor, state)
     
-    # 新增：压缩切换的平滑处理
     if not state.compression_started:
         state.compression_started = True
         logger.info(f"Starting compression at iteration {state.iter} with gradual compression enabled: {state.gradual_compression}")
@@ -232,17 +226,16 @@ def sparse_hook_sync(
     device = tensors[0].device  
     dtype = tensors[0].dtype
 
-    # 获取当前的压缩比（支持渐进式压缩）
     current_compress_ratio = state.get_current_compress_ratio()
 
     # Incorporate the error from the previous state into the gradients.
     bucket_index = bucket.index() 
     total_length = input_tensor.shape[0]
     if state.use_error_feedback == "ef14":
-        if bucket_index in state.error_dict:  # 误差缓存已存在，即之前已经累积过误差，所以现在把上轮没发送出去的部分 $E_{i-1}$ 加回
+        if bucket_index in state.error_dict:
             # input_tensor = \nabla F_i + E_{i-1}
             input_tensor.add_(state.error_dict[bucket_index], alpha=1.0)
-        else: # 还没有误差缓存（第一次通信该 bucket），create a zero tensor.
+        else: 
             logger.info("A zero tensor of length %s that represents local error is created.", total_length)
             state.error_dict[bucket_index] = torch.zeros(total_length, device=device, dtype=dtype)
     elif state.use_error_feedback == "ef21":
@@ -254,31 +247,26 @@ def sparse_hook_sync(
             logger.info("A tensor of length %s that represents local/global error is created.", total_length)
             state.error_dict[bucket_index] = torch.clone(input_tensor).detach()
             # allreduce \nabla F_0
-            dist.all_reduce(input_tensor, group=group_to_use, async_op=False) # async_op=False 表示会阻塞程序执行，直到 all_reduce 完全完成。
+            dist.all_reduce(input_tensor, group=group_to_use, async_op=False)
             input_tensor.div_(world_size)
             # \overline{E_0} = \overline{\nabla F_0}
             state.global_error_dict[bucket_index] = torch.clone(input_tensor).detach()
             # reset the full input tensor
-            state.maybe_increase_iter(bucket) # 判断是否需要将当前迭代轮数 state.iter 加 1（有时一个迭代（state.iter）可能会对应多个 bucket，而我们只在所有 bucket 都完成一次同步后再加一次迭代数）
+            state.maybe_increase_iter(bucket)
             fut: torch.futures.Future[torch.Tensor] = torch.futures.Future()
             fut.set_result(input_tensor)
             return fut
 
-    # 压缩:
     # seed 
-    if state.random:    # 在每个通信 hook 调用前重新设定随机种子，以便保证使用 RandK 时，在不同 GPU 上压缩出的索引（即indices = torch.randperm(tensor.numel())[:k]这步每个GPU所得的结果一样）是一样的
+    if state.random:  
         seed = torch.randint(0, 1_000_000_000, (1,), generator=state.rng).item() 
-                        # 用固定的随机种子让所有 GPU 同步采样！！
-                        # state.rng	是构造时固定的 RNG 实例（torch.Generator()），通常在 rank 0 （即第一个GPU）上
-                        # torch.randint(..., generator=state.rng)	（在第一个GPU上）用可控 RNG 采样出一个 seed
-        torch.manual_seed(seed) # 把这个种子设置成 PyTorch 的全局种子，使得后续 randperm 一样
+        torch.manual_seed(seed) 
     
-    # 构建压缩器、计算 k 值
     sparsify_func = {
         "row": sparsify_by_row, 
         "column": sparsify_by_column, 
         "tensor": sparsify}[state.sparse_type] 
-    sparsify_func = partial(sparsify_func, random=state.random) # 用 partial 固定 random 参数
+    sparsify_func = partial(sparsify_func, random=state.random) 
 
     cal_k_func = {
         "row": cal_k_by_row, 
@@ -286,8 +274,8 @@ def sparse_hook_sync(
         "tensor": cal_k}[state.sparse_type] 
     k_list = [cal_k_func(state, tensor) for tensor in tensors]
 
-    sum_k = sum(k_list) # k_list中元素求和即为values_memory和indices_memory的长度。
-    values_memory = torch.empty(sum_k, dtype=dtype, device=device) # 初始化为0
+    sum_k = sum(k_list) 
+    values_memory = torch.empty(sum_k, dtype=dtype, device=device) 
     indices_memory = torch.empty(sum_k, dtype=torch.int, device=device)
     _, _, bits_sum = compress_tensor_to_memory(
         tensors, 
@@ -299,7 +287,6 @@ def sparse_hook_sync(
         state.use_error_feedback)
 
 
-    # 更新一下 state.error_dict
     if state.use_error_feedback == "ef14":
         state.error_dict[bucket_index].copy_(input_tensor)              # E_i = \nabla F_i + E_{i-1} - C[\nabla F_i + E_{i-1}]
     elif state.use_error_feedback == "ef21":
@@ -312,7 +299,6 @@ def sparse_hook_sync(
         # if bucket.is_last():
         #     logger.info(f"Rank[{dist.get_rank()}] Iter[{state.iter}], updated local error: {state.error_dict[bucket_index][-5:]}")
 
-    # Allreduce 或 Allgather ，并解压回原梯度张量（聚合或直接替换）
     if state.random: 
         # Allreduce the values
         state.comm_bits_this_round += 2 *(world_size -1) * bits_sum
@@ -337,7 +323,6 @@ def sparse_hook_sync(
             decompress_memory_to_tensor_and_aggregate(tensors, k_list, values_memory, indices_memory, aggregate=True)
         input_tensor.div_(world_size)
     
-    # 更新 global_error_dict
     if state.use_error_feedback == "ef21":
         state.global_error_dict[bucket_index].add_(input_tensor, alpha=state.error_decay) # \overline{E_i} = \overline{E_{i-1}} + \overline{C[\nabla F_i - E_{i-1}]}
         input_tensor.copy_(state.global_error_dict[bucket_index])
@@ -345,7 +330,6 @@ def sparse_hook_sync(
     state.maybe_increase_iter(bucket)
 
     fut: torch.futures.Future[torch.Tensor] = torch.futures.Future()
-    # fut.set_result(input_tensor / world_size)  原代码有typo
     fut.set_result(input_tensor)
     return fut
 

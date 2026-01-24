@@ -45,7 +45,6 @@ from comm_hooks.utils import register_comm_hook_for_ddp_model, add_comm_hook_arg
 #     print("Downloading CIFAR-10 dataset...")
 #     datasets.CIFAR10(root=data_path, train=True, download=True)
 
-# 初始化分布式环境
 def init_distributed_mode(args):
     args.rank = int(os.environ['RANK'])
     args.local_rank = int(os.environ['LOCAL_RANK'])
@@ -58,14 +57,12 @@ def init_distributed_mode(args):
         timeout=timedelta(seconds=30)
     )
     print(f"Initialized distributed training (rank {args.rank})")
-    # 确认local_rank与GPU的对应关系
     # print(f"Rank {args.rank} running on CUDA device {args.local_rank} (visible devices: {os.environ.get('CUDA_VISIBLE_DEVICES')})")
-    # 确认后端
     # print(f"Rank {args.rank} uses backend {dist.get_backend()}")
 
 
 
-# 输入参数
+
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 # parser.add_argument('--resume', action='store_true',help='resume from checkpoint')
@@ -120,11 +117,11 @@ if args.rank == 0 and args.use_wandb:
 
 
 
-device = torch.device(f"cuda:{args.local_rank}") # 使用local_rank指定GPU
+device = torch.device(f"cuda:{args.local_rank}")
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 
-# Data(数据增强（训练集）)
+# Data
 print('Preparing data..')
 transform_train = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
@@ -138,14 +135,13 @@ transform_test = transforms.Compose([
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
-# 使用DistributedSampler
+# DistributedSampler
 trainset = torchvision.datasets.CIFAR10(root='/home/mcy/data', train=True, download=True, transform=transform_train)
-train_sampler = DistributedSampler(trainset) # 多 GPU 分布式训练 中，为了让每个 GPU 处理不同的数据子集，必须使用 DistributedSampler，它会根据当前进程的 rank 和总进程数，把数据划分给不同进程。
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.per_device_train_batch_size, sampler=train_sampler, num_workers=2, pin_memory=True) # num_workers=2 是指在 当前 GPU/进程下，开两个子线程 用来加载数据（取决于CPU而不是GPU）
-                                                                                                                                                        # pin_memory=True：加快 GPU 拷贝速度（一般训练时推荐开启）
+train_sampler = DistributedSampler(trainset) 
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.per_device_train_batch_size, sampler=train_sampler, num_workers=2, pin_memory=True) 
 
 testset = torchvision.datasets.CIFAR10(root='/home/mcy/data', train=False, download=True, transform=transform_test)
-test_sampler = DistributedSampler(testset, shuffle=False) # 每轮测试集数据固定，结果才具有可比性和稳定性，方便观察模型随训练进展的性能变化
+test_sampler = DistributedSampler(testset, shuffle=False) 
 testloader = torch.utils.data.DataLoader(testset, batch_size=args.per_device_train_batch_size, sampler=test_sampler, num_workers=2, pin_memory=True)
 
 # Model
@@ -192,8 +188,8 @@ if args.optimizer == "adamw":
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_train_epochs)
     milestone=0.1 * args.num_train_epochs
     warmup_scheduler = LinearLR(optimizer, start_factor=0.1, total_iters=milestone) 
-    cosine_scheduler = CosineAnnealingLR(optimizer, T_max=args.num_train_epochs-milestone) # T_max 表示余弦周期是多少个epoch
-    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[milestone]) # milestone 表示前milestone个epoch用warmup_scheduler，之后用cosine_scheduler
+    cosine_scheduler = CosineAnnealingLR(optimizer, T_max=args.num_train_epochs-milestone)
+    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[milestone]) 
 
 elif args.optimizer == 'sgd':  # msgd(NAG)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 150], gamma=0.1)
@@ -206,7 +202,7 @@ def train(epoch):
     if args.rank == 0:
         logger.info(f"\n[Epoch {epoch+1}/{args.num_train_epochs}] Training...")
 
-    train_sampler.set_epoch(epoch)  # 必要
+    train_sampler.set_epoch(epoch)
     net.train()
     train_loss = 0
     correct = 0
@@ -220,9 +216,9 @@ def train(epoch):
         optimizer.step()
 
         _, predicted = outputs.max(1) 
-        temloss = torch.tensor(loss.item(), device="cuda")  # 当前这卡的 loss 标量，转换成张量放到 GPU 上
-        temtotal = torch.tensor(targets.size(0), device="cuda")  # 当前这张卡上本轮的样本数
-        temcorrect = torch.tensor(predicted.eq(targets).sum().item(), device="cuda")  # 当前这张卡上预测对的样本数
+        temloss = torch.tensor(loss.item(), device="cuda") 
+        temtotal = torch.tensor(targets.size(0), device="cuda") 
+        temcorrect = torch.tensor(predicted.eq(targets).sum().item(), device="cuda") 
 
         dist.all_reduce(temloss, op=dist.ReduceOp.SUM)  
         temloss = temloss / args.world_size
@@ -253,7 +249,7 @@ def train(epoch):
 
 def test(epoch):
     global best_acc
-    test_sampler.set_epoch(epoch)  # 可选：确保多 epoch 时也能保持稳定性
+    test_sampler.set_epoch(epoch)
     net.eval()
     test_loss = 0
     correct = 0
@@ -304,7 +300,7 @@ def test(epoch):
     
 
 if __name__ == '__main__':
-    start_time = time.time()  # 开始计时
+    start_time = time.time() 
     print('训练开始！！！！！')
     
 
@@ -318,7 +314,7 @@ if __name__ == '__main__':
         test(epoch)
         scheduler.step()
 
-    end_time = time.time()  # 结束计时
+    end_time = time.time()
     print('训练结束！！！！！')
     total_seconds = end_time - start_time
     minutes, seconds = divmod(int(total_seconds), 60)

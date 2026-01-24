@@ -37,7 +37,7 @@ for LEARNING_RATE in 2e-3; do
             output_dir=output/lr$LEARNING_RATE-gc$gc-total_bs${total_batch_size}-seed${SEED}-${compressor_tag}-start_compress${start_compress_iter}-warmup${warmup_steps}-float32
             echo $compressor_tag
             mkdir -p ${output_dir}
-            python -m torch.distributed.run --standalone --nproc_per_node=4 c4/run_llama_pretraining_bits.py \
+            python -m torch.distributed.run --standalone --nproc_per_node=4 c4/run_llama_pretraining.py \
                 --model_config c4/configs/$MODEL.json \
                 --max_length 256 \
                 --dtype float32 \
@@ -63,7 +63,7 @@ for LEARNING_RATE in 2e-3; do
                 \
                 --grad_clipping $gc \
                 \
-                --wandb_project ${MODEL}-bits \
+                --wandb_project ${MODEL} \
                 --output_dir $output_dir \
             2>&1 | tee ${output_dir}/output.log
         done
