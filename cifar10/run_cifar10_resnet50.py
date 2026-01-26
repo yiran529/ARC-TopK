@@ -130,11 +130,11 @@ transform_test = transforms.Compose([
 ])
 
 # DistributedSampler
-trainset = torchvision.datasets.CIFAR10(root='/home/mcy/data', train=True, download=True, transform=transform_train)
+trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
 train_sampler = DistributedSampler(trainset) 
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.per_device_train_batch_size, sampler=train_sampler, num_workers=2, pin_memory=True) 
 
-testset = torchvision.datasets.CIFAR10(root='/home/mcy/data', train=False, download=True, transform=transform_test)
+testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
 test_sampler = DistributedSampler(testset, shuffle=False)
 testloader = torch.utils.data.DataLoader(testset, batch_size=args.per_device_train_batch_size, sampler=test_sampler, num_workers=2, pin_memory=True)
 
@@ -295,7 +295,7 @@ def test(epoch):
 
 if __name__ == '__main__':
     start_time = time.time()
-    print('Training Begins！！！！！')
+    print('Training Begins!')
     
 
     if args.rank == 0:
@@ -309,7 +309,7 @@ if __name__ == '__main__':
         scheduler.step()
 
     end_time = time.time() 
-    print('Traning Ends！！！！！')
+    print('Traning Ends!')
     total_seconds = end_time - start_time
     minutes, seconds = divmod(int(total_seconds), 60)
 
