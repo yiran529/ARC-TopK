@@ -40,7 +40,7 @@ from comm_hooks.utils import register_comm_hook_for_ddp_model, add_comm_hook_arg
 # import os
 # from torchvision import datasets
 
-# data_path = '/home/mcy/data'
+# data_path = './data'
 # if not os.path.exists(os.path.join(data_path, 'cifar-10-batches-py')):
 #     print("Downloading CIFAR-10 dataset...")
 #     datasets.CIFAR10(root=data_path, train=True, download=True)
@@ -301,7 +301,7 @@ def test(epoch):
 
 if __name__ == '__main__':
     start_time = time.time() 
-    print('训练开始！！！！！')
+    print('Training Begins！！！！！')
     
 
     if args.rank == 0:
@@ -315,7 +315,7 @@ if __name__ == '__main__':
         scheduler.step()
 
     end_time = time.time()
-    print('训练结束！！！！！')
+    print('Traning Ends！！！！！')
     total_seconds = end_time - start_time
     minutes, seconds = divmod(int(total_seconds), 60)
 
