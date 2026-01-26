@@ -120,7 +120,53 @@ done
 
 ### Pre-Training on C4
 
-The main script is [run_llama_pretraining.py](https://github.com/Aris-ma/ARC-TopK-release/blob/master/c4/run_llama_pretraining.py). You can use the [script](https://github.com/Aris-ma/ARC-TopK-release/blob/master/c4/scripts/c4_none_0123.sh) to pretrain LLaMA model:
+The main script is [run_llama_pretraining.py](https://github.com/Aris-ma/ARC-TopK-release/blob/master/c4/run_llama_pretraining.py). You can use the following script as an example to pretrain LLaMA model:
+```
+for LEARNING_RATE in 2e-3; do
+    for use_error_feedback in ef14; do
+        for compressor in "randk_sync"; do 
+            # time
+            current_time=$(date "+%Y%m%d%H%M%S")
+            # tag
+            compressor_tag=${compressor}-$use_error_feedback-ratio${compress_ratio}
+            output_dir=output/lr$LEARNING_RATE-gc$gc-total_bs${total_batch_size}-seed${SEED}-${compressor_tag}-start_compress${start_compress_iter}-warmup${warmup_steps}-float32
+            echo $compressor_tag
+            mkdir -p ${output_dir}
+            python -m torch.distributed.run --standalone --nproc_per_node=4 c4/run_llama_pretraining.py \
+                --model_config c4/configs/$MODEL.json \
+                --max_length 256 \
+                --dtype float32 \
+                --num_training_steps $num_training_steps \
+                --warmup_steps $warmup_steps \
+                --total_batch_size 256 \
+                --batch_size 32 \
+                --gradient_accumulation 2 \
+                --save_dir c4/results/Adam/$MODEL/lr_$LEARNING_RATE \
+                --seed $SEED \
+                \
+                --optimizer "adamw" \
+                --lr $LEARNING_RATE \
+                --beta1 0.9 \
+                --beta2 0.999 \
+                --eps 1e-8 \
+                --weight_decay 0.0 \
+                \
+                --compressor "none" \
+                --start_compress_iter 2000 \
+                --use_error_feedback $use_error_feedback \
+                --compress_ratio 0.2 \
+                \
+                --grad_clipping 1.0 \
+                \
+                --wandb_project ${MODEL} \
+                --output_dir $output_dir \
+            2>&1 | tee ${output_dir}/output.log
+        done
+    done
+done
+```
+
+You can also use [script](https://github.com/Aris-ma/ARC-TopK-release/blob/master/c4/scripts/c4_none_0123.sh) to run it.
 
 
 ## Citation
@@ -128,7 +174,6 @@ The main script is [run_llama_pretraining.py](https://github.com/Aris-ma/ARC-Top
 ```
 @misc{arctopk2026,
   title         = {Communication-Efficient Distributed Learning with All-Reduce Compatible Top-K Compressor},
-  author        = {},
   year          = {2026},
   howpublished  = {\url{https://github.com/Aris-ma/ARC-TopK-release}},
 }
