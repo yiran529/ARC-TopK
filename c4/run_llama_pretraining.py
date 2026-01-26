@@ -220,7 +220,7 @@ def main(args):
 
     # it doesn't matter which tokenizer we use, because we train from scratch
     # T5 tokenizer was trained on C4 and we are also training on C4, so it's a good choice
-    tokenizer = AutoTokenizer.from_pretrained("/home/mcy/models--t5-base/snapshots/a9723ea7f1b39c1eae772870f3b547bf6ef7e6c1", model_max_length=args.max_length)
+    tokenizer = AutoTokenizer.from_pretrained("t5-base", model_max_length=args.max_length)
 
     def preprocess_batched(batch):
         batch = tokenizer(
