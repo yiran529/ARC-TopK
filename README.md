@@ -1,17 +1,27 @@
 # ARC-TopK
 
+This is the implementation for paper *Communication-Efficient Distributed Learning with All-Reduce Compatible Top-K Compressor*.
+
 Communication remains a central bottleneck in large-scale distributed machine learning, and gradient sparsification has emerged as a promising strategy to alleviate this challenge. 
 
-However, existing gradient compressors face notable limitations: RandK discards structural information and performs poorly in practice, while TopK preserves informative entries but loses the contraction property and requires costly All-Gather operations. 
+In this paper, we propose **ARC-Top-K**, an All-Reduce-Compatible Top-K compressor that aligns sparsity patterns across nodes using a lightweight sketch of the gradient, enabling index-free All-Reduce while preserving globally significant information:
+![](./fig1.png)
 
-In this paper, we propose **arctopK**, an All-Reduce-Compatible Top-K compressor that aligns sparsity patterns across nodes using a lightweight sketch of the gradient, enabling index-free All-Reduce while preserving globally significant information. arctopK is provably contractive and, when combined with momentum error feedback (EF21M), achieves linear speedup and sharper convergence rates than the original EF21M under standard assumptions. 
+We have proved that ARC-Top-K is contractive. Besides, when combined with momentum error feedback (EF21M), it achieves linear speedup and sharper convergence rates than the original EF21M under standard assumptions. 
 
-Empirically, arctopK matches the accuracy of TopK while reducing wall-clock training time by up to 60.7\%, offering an efficient and scalable solution that combines the robustness of RandK with the strong performance of TopK.
+Experiments on both pre-training and fine-tuning LLMs have shown that arctopK matches the accuracy of TopK with less communication overhead.
+![](./fig4.png)
+
+
+What's more, it reduces wall-clock training time by up to 60.7\%, offering an efficient and scalable solution that combines the robustness of RandK with the strong performance of TopK.
+![](./table5.png)
+
+
 
 
 ## Installation
 
-The dependencies are listed in [requirements.txt](https://github.com/Aris-ma/AllreduceTopK/blob/master/requirements.txt). 
+The dependencies are listed in [requirements.txt](https://github.com/Aris-ma/ARC-TopK-release/blob/master/requirements.txt). 
 
 You can install them via::
 
@@ -23,11 +33,20 @@ Our experiments are conducted with python 3.11 with PyTorch 2.7 on NVIDIA RTX 40
 
 ## Reproduce Experiments
 
+### Numerical Experiment
+
+We create a synthetic adversarial benchmark called the Robust Shifted Objective to evaluate ARC-Top-K's resilience in heterogeneous environments with diverse local gradients. 
+
+The main script is [synthetic_release/main.py](https://github.com/Aris-ma/ARC-TopK-release/blob/master/synthetic_release/main.py). You can run the script by 
+```
+python synthetic_release/main.py
+```
+
 ### Fine-Tuning RoBERTa on GLUE tasks
 
-The code for GLUE experiments is provided in [glue_fine-tuning](https://github.com/Aris-ma/AllreduceTopK/tree/master/glue_fine-tuning).
+The code for GLUE experiments is provided in [glue_fine-tuning](https://github.com/Aris-ma/ARC-TopK-release/tree/master/glue_fine-tuning).
 
-The main script is [run_glue_no_trainer_new.py](https://github.com/Aris-ma/AllreduceTopK/blob/master/glue_fine-tuning/run_glue_no_trainer_new.py)
+The main script is [run_glue_no_trainer_new.py](https://github.com/Aris-ma/ARC-TopK-release/blob/master/glue_fine-tuning/run_glue_no_trainer_new.py)
 
 An example script is shown below:
 ```
@@ -68,17 +87,49 @@ Supported compressors:
 * No compression (`compressor`="none")
 
 
-For reproductibility purposes, we provide the [scripts](https://github.com/Aris-ma/AllreduceTopK/tree/master/glue_fine-tuning/scripts) . 
+For reproductibility purposes, we provide the [scripts](https://github.com/Aris-ma/ARC-TopK-release/tree/master/glue_fine-tuning/scripts) . 
 
-Seeds we commonly use include 1234, 1236, 1238.
+
+### Pre-Training on CIFAR
+
+[run_cifar10.py](https://github.com/Aris-ma/ARC-TopK-release/blob/master/cifar10/run_cifar10.py) is the main script for this task, An example script is shown below:
+```
+for use_error_feedback in "noef"; do
+    for compressor in "none"; do
+        for optimizer in "adamw"; do
+            for seed in 1410; do
+                PYTHONPATH=. torchrun  --nproc_per_node=8 --master-port=29501 cifar10/run_cifar10.py \
+                    --lr 1e-3 \
+                    --use_wandb 0 \
+                    --start_compress_iter 1000 \
+                    --weight_decay 5e-4 \
+                    \
+                    --compressor $compressor \
+                    --use_error_feedback $use_error_feedback \
+                    --per_device_train_batch_size 32 \
+                    --seed $seed \
+                    --num_train_epochs 200 \
+                    --compress_ratio 0.2 \
+                    --col_rank 4 \
+                    --optimizer $optimizer
+            done
+        done
+    done
+done
+```
+
+### Pre-Training on C4
+
+The main script is [run_llama_pretraining.py](https://github.com/Aris-ma/ARC-TopK-release/blob/master/c4/run_llama_pretraining.py). You can use the [script](https://github.com/Aris-ma/ARC-TopK-release/blob/master/c4/scripts/c4_none_0123.sh) to pretrain LLaMA model:
+
 
 ## Citation
 
 ```
-@misc{arctopk2025,
-  title         = {An All-Reduce Compatible Top-K Compressor for Communication-Efficient Distributed Learning},
+@misc{arctopk2026,
+  title         = {Communication-Efficient Distributed Learning with All-Reduce Compatible Top-K Compressor},
   author        = {},
-  year          = {2025},
-  howpublished  = {\url{https://github.com/Aris-ma/AllreduceTopK}},
+  year          = {2026},
+  howpublished  = {\url{https://github.com/Aris-ma/ARC-TopK-release}},
 }
 ```
