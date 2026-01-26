@@ -10,12 +10,15 @@ In this paper, we propose **ARC-Top-K**, an All-Reduce-Compatible Top-K compress
 We have proved that ARC-Top-K is contractive. Besides, when combined with momentum error feedback (EF21M), it achieves linear speedup and sharper convergence rates than the original EF21M under standard assumptions. 
 
 Experiments on both pre-training and fine-tuning LLMs have shown that arctopK matches the accuracy of TopK with less communication overhead.
-<img src="./fig4.png" width="50%" />
+<div align="center">
+  <img src="./fig4.png" width="40%" />
+</div>
 
 
 What's more, it reduces wall-clock training time by up to 60.7\%, offering an efficient and scalable solution that combines the robustness of RandK with the strong performance of TopK.
-<img src="./table5.png" width="50%" />
-
+<div align="center">
+  <img src="./table5.png" width="50%" />
+</div>
 
 
 
