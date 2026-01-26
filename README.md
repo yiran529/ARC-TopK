@@ -131,21 +131,21 @@ for LEARNING_RATE in 2e-3; do
             # time
             current_time=$(date "+%Y%m%d%H%M%S")
             # tag
-            compressor_tag=${compressor}-$use_error_feedback-ratio${compress_ratio}
-            output_dir=output/lr$LEARNING_RATE-gc$gc-total_bs${total_batch_size}-seed${SEED}-${compressor_tag}-start_compress${start_compress_iter}-warmup${warmup_steps}-float32
+            compressor_tag=none-$use_error_feedback-ratio0.2
+            output_dir=output/lr$LEARNING_RATE-gc1.0-total_bs256-seed1243-${compressor_tag}-start_compress2000-warmup1000-float32
             echo $compressor_tag
             mkdir -p ${output_dir}
             python -m torch.distributed.run --standalone --nproc_per_node=4 c4/run_llama_pretraining.py \
-                --model_config c4/configs/$MODEL.json \
+                --model_config c4/configs/llama_130m.json \
                 --max_length 256 \
                 --dtype float32 \
-                --num_training_steps $num_training_steps \
-                --warmup_steps $warmup_steps \
+                --num_training_steps 10000 \
+                --warmup_steps 1000 \
                 --total_batch_size 256 \
                 --batch_size 32 \
                 --gradient_accumulation 2 \
-                --save_dir c4/results/Adam/$MODEL/lr_$LEARNING_RATE \
-                --seed $SEED \
+                --save_dir c4/results/Adam/llama_130m/lr_$LEARNING_RATE \
+                --seed 1243 \
                 \
                 --optimizer "adamw" \
                 --lr $LEARNING_RATE \
@@ -161,7 +161,7 @@ for LEARNING_RATE in 2e-3; do
                 \
                 --grad_clipping 1.0 \
                 \
-                --wandb_project ${MODEL} \
+                --wandb_project "llama_130m" \
                 --output_dir $output_dir \
             2>&1 | tee ${output_dir}/output.log
         done
