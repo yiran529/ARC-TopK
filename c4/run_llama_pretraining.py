@@ -26,6 +26,7 @@ from c4.pept_utils.dataloader import PreprocessedIterableDataset
 from c4.pept_utils.modeling_llama import LlamaForCausalLM
 
 from comm_hooks.utils import add_comm_hook_args, register_comm_hook_for_ddp_model
+from optimizers import add_muon_args, build_muon_optimizer
 
 transformers.logging.set_verbosity_error()
 
@@ -58,7 +59,7 @@ def parse_args(args):
     parser.add_argument("--name", type=str, default="test")
 
     # Optimizer parameters
-    parser.add_argument("--optimizer", default="Adam")
+    parser.add_argument("--optimizer", default="adamw", type=str.lower)
 
     # AdamW type parameters
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -81,12 +82,13 @@ def parse_args(args):
     # Compressor arguments
     from comm_hooks.utils import add_comm_hook_args
     add_comm_hook_args(parser)
+    add_muon_args(parser)
     
     args = parser.parse_args(args)
 
     args = args_utils.check_args_torchrun_main(args)
 
-    supported_optimizers = ['adamw', 'msgd']
+    supported_optimizers = ['adamw', 'msgd', 'muon']
     assert args.optimizer in supported_optimizers, "`optimizer` should be one of the following: " + ', '.join(supported_optimizers)
 
     return args
@@ -312,6 +314,18 @@ def main(args):
     
     if args.optimizer.lower() == "adamw":
         optimizer = torch.optim.AdamW(trainable_params, lr=args.lr, betas=(args.beta1,args.beta2), eps=args.eps, weight_decay=args.weight_decay)
+    elif args.optimizer == "muon":
+        optimizer = build_muon_optimizer(
+            model, lr=args.lr, scalar_lr=args.muon_scalar_lr,
+            mu=args.muon_mu, weight_decay=args.weight_decay,
+            scalar_weight_decay=args.muon_scalar_weight_decay,
+            scalar_betas=(args.muon_scalar_beta1, args.muon_scalar_beta2),
+            scalar_epsilon=args.muon_scalar_eps,
+            muon_epsilon=args.muon_epsilon,
+            adjust_lr=None if args.muon_adjust_lr == "none" else args.muon_adjust_lr,
+            compile_orthogonalization=args.muon_compile,
+            distributed_orthogonalization=not args.muon_local_orthogonalization,
+        )
     else:
         raise ValueError(f"Optimizer {args.optimizer} not supported")
 

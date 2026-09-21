@@ -209,6 +209,16 @@ def tensor_bits(tensor):
 
 
 def name_func_glue(args):
+    if args.optimizer == "muon":
+        program_name = f"muon_glue_no_trainer_{args.task_name}_{args.compressor}_{args.use_error_feedback}"
+        run_name = (
+            f"muon_lr{args.learning_rate}_mu{args.muon_mu}_bs{args.per_device_train_batch_size}"
+            f"_seed{args.seed}_{args.compressor}_{args.use_error_feedback}"
+            f"_wd{args.weight_decay}_ratio{args.compress_ratio}"
+        )
+        if args.compressor == "group_topk_no_reshape":
+            run_name += f"_r{args.r}"
+        return program_name, run_name
     if args.optimizer=="adamw":
         if args.weight_decay==0:
             if args.compress_ratio==0.08:
@@ -269,5 +279,4 @@ def name_func_glue(args):
                 run_name =f"lr{args.learning_rate}_bs{args.per_device_train_batch_size}_seed{args.seed}_{args.compressor}_{args.use_error_feedback}_wd{args.weight_decay}_mo{args.momentum}_ratio{args.compress_ratio}"
                 
     return program_name, run_name
-
 

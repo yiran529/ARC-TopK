@@ -36,6 +36,7 @@ logging.basicConfig(level=logging.INFO)
 
 ###
 from comm_hooks.utils import register_comm_hook_for_ddp_model, add_comm_hook_args
+from optimizers import add_muon_args, build_muon_optimizer
 
 
 
@@ -75,11 +76,12 @@ parser.add_argument('--col_rank', default=0, type=int, help=' "--r" is ambiguous
 
 ###
 add_comm_hook_args(parser) 
+add_muon_args(parser)
 args = parser.parse_args()
 args.r=args.col_rank
 init_distributed_mode(args)
 
-supported_optimizers = ['adamw', 'sgd']
+supported_optimizers = ['adamw', 'sgd', 'muon']
 assert args.optimizer in supported_optimizers, "`optimizer` should be one of the following: " + ', '.join(supported_optimizers)
 
 
@@ -107,6 +109,11 @@ if args.rank == 0 and args.use_wandb:
                 project=f"msgd_cifar10_resnet50_{args.compressor}_{args.use_error_feedback}", 
                 name=f"atomo_lr{args.lr}_bs{args.per_device_train_batch_size}_seed{args.seed}_{args.compressor}_{args.use_error_feedback}_wd{args.weight_decay}_ratio{args.compress_ratio}"
             )
+    elif args.optimizer == "muon":
+        wandb.init(
+            project=f"muon_cifar10_resnet50_{args.compressor}_{args.use_error_feedback}",
+            name=f"muon_lr{args.lr}_mu{args.muon_mu}_seed{args.seed}_{args.compressor}_{args.use_error_feedback}_ratio{args.compress_ratio}",
+        )
 
 
 
@@ -172,13 +179,25 @@ if args.optimizer == "adamw":
     optimizer = torch.optim.Adam(optimizer_grouped_parameters, lr=args.lr)
 elif args.optimizer == 'sgd':  # msgd(NAG)
     optimizer = torch.optim.SGD(optimizer_grouped_parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
+elif args.optimizer == 'muon':
+    optimizer = build_muon_optimizer(
+        net, lr=args.lr, scalar_lr=args.muon_scalar_lr,
+        mu=args.muon_mu, weight_decay=args.weight_decay,
+        scalar_weight_decay=args.muon_scalar_weight_decay,
+        scalar_betas=(args.muon_scalar_beta1, args.muon_scalar_beta2),
+        scalar_epsilon=args.muon_scalar_eps,
+        muon_epsilon=args.muon_epsilon,
+        adjust_lr=None if args.muon_adjust_lr == "none" else args.muon_adjust_lr,
+        compile_orthogonalization=args.muon_compile,
+        distributed_orthogonalization=not args.muon_local_orthogonalization,
+    )
 
 # Compressor
 process_group = dist.distributed_c10d._get_default_group()
 register_comm_hook_for_ddp_model(net, process_group, args, optimizer=optimizer)
 
 # lr_scheduler
-if args.optimizer == "adamw":
+if args.optimizer in ("adamw", "muon"):
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.num_train_epochs)
     milestone=0.1 * args.num_train_epochs
     warmup_scheduler = LinearLR(optimizer, start_factor=0.1, total_iters=milestone) 

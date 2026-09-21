@@ -172,6 +172,48 @@ done
 You can also use [script](https://github.com/Aris-ma/ARC-TopK-release/blob/master/c4/scripts/c4_none_0123.sh) to run it.
 
 
+### Muon optimizer
+
+C4, GLUE, CIFAR-10 ResNet-18, and CIFAR-10 ResNet-50 accept
+`--optimizer muon`. The communication method is selected independently:
+`--compressor none` runs dense-gradient Muon, while
+`--compressor group_topk_no_reshape` applies Muon after ARC-TopK gradient
+synchronization.
+
+The implementation follows the main quality-related choices used by dion:
+
+* momentum `0.95` with a Nesterov update;
+* five-step Polar Express orthogonalization in BF16;
+* spectral-norm matrix learning-rate scaling by default;
+* AdamW updates for embeddings, output heads, normalization parameters, and
+  biases, with separate scalar learning-rate and moment settings;
+* convolution weights flattened to `[out_channels, -1]`.
+
+For speed, equal-shape matrices are orthogonalized in batches. Under DDP, each
+rank orthogonalizes a different part of a batch and the results are collected
+with AllGather. Pass `--muon_local_orthogonalization` to repeat all
+orthogonalization work on every rank for comparison. `--muon_compile` enables
+`torch.compile` for Polar Express; its first use includes compilation overhead.
+
+Example Muon arguments for the C4 command above:
+
+```bash
+--optimizer muon \
+--lr 0.02 \
+--muon_mu 0.95 \
+--muon_epsilon 1e-8 \
+--muon_scalar_lr 0.02 \
+--muon_scalar_beta1 0.9 \
+--muon_scalar_beta2 0.95 \
+--muon_adjust_lr spectral_norm \
+--muon_compile \
+--compressor none
+```
+
+With a lossy compressor, Muon orthogonalizes the compressed synchronized
+gradient. Since orthogonalization is nonlinear, this is an approximate Muon
+variant rather than a communication-equivalent implementation of dense Muon.
+
 ## Citation
 
 ```

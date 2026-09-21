@@ -54,6 +54,7 @@ from wandb import Html
 ###
 import torch.distributed as dist
 from comm_hooks.utils import register_comm_hook_for_ddp_model, add_comm_hook_args, name_func_glue
+from optimizers import add_muon_args, build_muon_optimizer
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 # check_min_version("4.38.0.dev0")
@@ -243,6 +244,7 @@ def parse_args():
     
     ### Compressor arguments
     add_comm_hook_args(parser) 
+    add_muon_args(parser)
 
     args = parser.parse_args()
     
@@ -257,7 +259,7 @@ def parse_args():
             extension = args.validation_file.split(".")[-1]
             assert extension in ["csv", "json"], "`validation_file` should be a csv or a json file."
     
-    supported_optimizers = ['adamw', 'sgd']
+    supported_optimizers = ['adamw', 'sgd', 'muon']
     assert args.optimizer in supported_optimizers, "`optimizer` should be one of the following: " + ', '.join(supported_optimizers)
 
     return args
@@ -486,6 +488,18 @@ def main():
 
     elif args.optimizer == 'sgd':  # msgd(NAG)
         optimizer = torch.optim.SGD(optimizer_grouped_parameters, lr=args.learning_rate, momentum=args.momentum, nesterov=True)
+    elif args.optimizer == 'muon':
+        optimizer = build_muon_optimizer(
+            model, lr=args.learning_rate, scalar_lr=args.muon_scalar_lr,
+            mu=args.muon_mu, weight_decay=args.weight_decay,
+            scalar_weight_decay=args.muon_scalar_weight_decay,
+            scalar_betas=(args.muon_scalar_beta1, args.muon_scalar_beta2),
+            scalar_epsilon=args.muon_scalar_eps,
+            muon_epsilon=args.muon_epsilon,
+            adjust_lr=None if args.muon_adjust_lr == "none" else args.muon_adjust_lr,
+            compile_orthogonalization=args.muon_compile,
+            distributed_orthogonalization=not args.muon_local_orthogonalization,
+        )
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
