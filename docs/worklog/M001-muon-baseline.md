@@ -108,3 +108,12 @@ checkpoint，只有显式设置 `--save_every > 0` 时才启用周期保存。
   受共享 GPU 7 干扰，质量指标仍可使用。
 - 可复现启动脚本：`c4/scripts/run_cm001_muon_60m_c4.sh`；tmux 会话：
   `cm001-muon60m`；主日志：`output/CM001-muon-dense-llama60m-c4-1p1b-ws4-s1243/train.log`。
+
+## 2026-09-22：CM002--CM005 串行实验队列
+
+- `CM002` 使用 Dense AdamW 训练 60M，LR 为 0.002，作为论文 Table IV 基线。
+- `CM004-m001-dense-muon-llama130m-c4-2p2b-ws4-s1243` 使用与 CM001 相同的
+  Muon 配置训练 130M，名义 token slots 为 2.2B。
+- 二者与 M002 的 60M/130M ARC-TopK + Muon 实验由
+  `c4/scripts/run_cm002_cm005_serial.sh` 串行编排；不使用结果 gate，单项失败后
+  仍继续下一项。控制脚本等待 4 张低占用 GPU 后启动，允许与已有进程共享。
