@@ -109,8 +109,17 @@ def should_stop_evaluation(evaluated_on_tokens, target_eval_tokens):
     return evaluated_on_tokens >= target_eval_tokens
 
 
-def evaluation_totals_after_batch(total_batches, evaluated_on_tokens, batch_tokens, world_size):
-    return total_batches + 1, evaluated_on_tokens + batch_tokens * world_size
+def evaluation_loss_totals_after_batch(
+    loss_numerator, evaluated_on_tokens, batch_loss, batch_prediction_tokens
+):
+    return (
+        loss_numerator + batch_loss * batch_prediction_tokens,
+        evaluated_on_tokens + batch_prediction_tokens,
+    )
+
+
+def elapsed_seconds(start_time, end_time):
+    return end_time - start_time
 
 
 def loss_to_perplexity(loss):
@@ -224,36 +233,38 @@ def evaluate_model(
     )
     val_data_mapped.batch = lambda batch_size: training_utils.batch_fn(val_data_mapped, batch_size)
 
+    local_target_eval_tokens = math.ceil(target_eval_tokens / world_size)
     evaluated_on_tokens = 0
-    total_loss = torch.tensor(0.0).to(device)
-    total_batches = 0
+    loss_numerator = torch.zeros((), dtype=torch.float64, device=device)
     logger.info(f"Eval set prepared in {time.time() - _time:.2f} seconds")
 
     for batch in val_data_mapped.batch(batch_size=batch_size):
-        if should_stop_evaluation(evaluated_on_tokens, target_eval_tokens):
+        if should_stop_evaluation(evaluated_on_tokens, local_target_eval_tokens):
             break
 
         batch = {k: v.to(device) for k, v in batch.items()}
         labels = batch["input_ids"].clone()
         labels[labels == pad_idx] = -100
         loss = model(**batch, labels=labels).loss
-        total_loss += loss.detach()
 
-        batch_tokens = (batch["input_ids"] != pad_idx).sum().item()
-        token_world_size = 1 if single_gpu else world_size
-        total_batches, evaluated_on_tokens = evaluation_totals_after_batch(
-            total_batches, evaluated_on_tokens, batch_tokens, token_world_size
+        batch_prediction_tokens = (labels[..., 1:] != -100).sum().item()
+        loss_numerator, evaluated_on_tokens = evaluation_loss_totals_after_batch(
+            loss_numerator,
+            evaluated_on_tokens,
+            loss.detach().to(dtype=loss_numerator.dtype),
+            batch_prediction_tokens,
         )
 
-    total_loss = total_loss / total_batches
-    print(total_loss.item())
-    print("Total batch size: ", total_batches)
-    print("Evaluated on tokens: ", evaluated_on_tokens)
-    print("Labels: ", labels)
-    # Gather losses across all GPUs
-    gathered_losses = [torch.zeros_like(total_loss) for _ in range(world_size)]
-    dist.all_gather(gathered_losses, total_loss)
-    total_loss = sum([t.item() for t in gathered_losses]) / world_size
+    evaluation_totals = torch.stack(
+        (
+            loss_numerator,
+            torch.tensor(evaluated_on_tokens, dtype=loss_numerator.dtype, device=device),
+        )
+    )
+    dist.all_reduce(evaluation_totals, op=dist.ReduceOp.SUM)
+    total_loss = (evaluation_totals[0] / evaluation_totals[1]).item()
+    evaluated_on_tokens = int(evaluation_totals[1].item())
+    logger.info("Evaluated on %s effective prediction tokens", evaluated_on_tokens)
 
     return total_loss, evaluated_on_tokens
 
@@ -480,7 +491,7 @@ def main(args):
     # global steps and others are defined above
     pad_idx = tokenizer.pad_token_id
     # model.module.generation_config.pad_token_id = tokenizer.pad_token_id #replace unvalid -1 from config file
-    update_time = time.time()
+    step_start_time = time.perf_counter()
     local_step = 0  # when continue_from is used, local_step != global_step
     ddp_comm_bits_total = 0
 
@@ -538,7 +549,8 @@ def main(args):
         optimizer.zero_grad()
 
         update_step += 1
-        update_time = time.time() - update_time
+        torch.cuda.synchronize(device)
+        step_time_s = elapsed_seconds(step_start_time, time.perf_counter())
 
         # save checkpoint by save_every
         if args.save_every > 0 and update_step % args.save_every == 0:
@@ -566,7 +578,7 @@ def main(args):
                     "update_step": update_step,
                     "tokens_seen": tokens_seen,
                     "tokens_seen_before": tokens_seen_before,
-                    "update_time": update_time,
+                    "update_time": step_time_s,
                 }
                 with open(f"{current_model_directory}/training_state.json", "w") as f:
                     json.dump(training_state_checkpoint, f, indent=4)
@@ -623,7 +635,7 @@ def main(args):
                 update_step=update_step,
                 tokens_seen=tokens_seen,
                 tokens_in_update=tokens_in_update,
-                step_time_s=update_time,
+                step_time_s=step_time_s,
                 total_batch_size=args.total_batch_size,
                 batches_in_update=batches_in_update,
                 peak_memory_allocated_mb=peak_memory_allocated_mb,
@@ -633,7 +645,7 @@ def main(args):
                 step=global_step,
             )
         torch.cuda.reset_peak_memory_stats()
-        update_time = time.time()
+        step_start_time = time.perf_counter()
 
     # ##############################
     # END of training loop

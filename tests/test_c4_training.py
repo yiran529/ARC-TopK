@@ -3,7 +3,8 @@ import math
 from c4.run_llama_pretraining import (
     build_update_metrics,
     collect_communication_metrics,
-    evaluation_totals_after_batch,
+    elapsed_seconds,
+    evaluation_loss_totals_after_batch,
     has_reached_training_limit,
     loss_to_perplexity,
     should_stop_evaluation,
@@ -20,8 +21,21 @@ def test_evaluation_stops_when_effective_token_target_is_reached():
     assert should_stop_evaluation(10_000_000, 10_000_000)
 
 
-def test_evaluation_batch_totals_start_at_zero():
-    assert evaluation_totals_after_batch(0, 0, 256, 4) == (1, 1_024)
+def test_evaluation_loss_totals_weight_batch_mean_by_prediction_tokens():
+    loss_numerator, evaluated_tokens = evaluation_loss_totals_after_batch(
+        0.0, 0, 2.0, 3
+    )
+    loss_numerator, evaluated_tokens = evaluation_loss_totals_after_batch(
+        loss_numerator, evaluated_tokens, 4.0, 1
+    )
+
+    assert loss_numerator == 10.0
+    assert evaluated_tokens == 4
+    assert loss_numerator / evaluated_tokens == 2.5
+
+
+def test_elapsed_seconds_uses_end_minus_start():
+    assert elapsed_seconds(10.0, 12.5) == 2.5
 
 
 def test_loss_to_perplexity_is_exponential():

@@ -72,8 +72,11 @@ checkpoint，只有显式设置 `--save_every > 0` 时才启用周期保存。
 - 修复训练循环边界：`num_training_steps=N` 现在恰好执行 N 次 optimizer update，
   不再多执行一次；`--save_every` 默认改为 `0`，关闭时不自动生成 `save_dir`。
   显式启用周期保存时仍保留原有保存和续训路径。
-- 修正评估批次数从 0 开始，并在达到 10M effective tokens 后停止；最终记录并写入
-  `all_results.json` 的 `final_eval_perplexity=exp(final_eval_loss)`。
+- 修正评估为按 causal LM 的有效预测 token（`labels[..., 1:] != -100`）对 batch
+  mean loss 加权；各 rank 读取约 `10M / world_size` 本地 token，最后用一次
+  `all_reduce` 聚合 loss numerator 与 token count，在达到全局 10M effective
+  prediction tokens 后停止（最后一批可略超）。最终记录并写入 `all_results.json`
+  的 `final_eval_perplexity=exp(final_eval_loss)`。
 - 每个 update 的 W&B 指标增加明确的 `step_time_s`、
   `throughput_tokens_per_s`、显存 allocated/reserved，以及可用的 DDP 和 Muon
   通信 bits（step/total 与 Muon 分类别统计）；保留旧吞吐和显存键兼容已有面板。
