@@ -91,3 +91,20 @@ checkpoint，只有显式设置 `--save_every > 0` 时才启用周期保存。
 - 新增 CPU 单测覆盖训练步数边界、checkpoint 默认行为、评估 token 边界与批次计数、
   perplexity、W&B 指标命名及 DDP/Muon 通信统计。
 - 未启动训练、未下载数据、未读取 `/home/wyr/.netrc`。
+
+## 2026-09-21：CM001 正式训练启动
+
+- 实验编号：`CM001-muon-dense-llama60m-c4-1p1b-ws4-s1243`。
+- 使用 GPU 2、3、6、7，LLaMA-60M、C4、sequence length 256、FP32，
+  per-device microbatch 32、gradient accumulation 4、global batch 512，训练
+  8,393 optimizer updates（1,100,087,296 个名义 token slots）。
+- 优化器为 dense Muon：matrix LR 0.02、momentum 0.95、spectral-norm scaling；
+  scalar AdamW LR 0.001；两条路径 weight decay 均为 0。cosine scheduler、
+  warmup 1,000、minimum LR ratio 0.1、gradient clipping 1.0。
+- 默认不保存 checkpoint；W&B project 为 `ARC-TopK-LLaMA-60M`，最终在本地
+  8 个 validation shards 上评估约 10M effective prediction tokens。
+- 启动时 GPU 2、3、6 空闲；GPU 7 有另一个用户进程占用约 8.0 GiB，利用率约
+  36%。用户明确要求不做 GPU smoke、直接启动，因此 CM001 的 wall-time/吞吐可能
+  受共享 GPU 7 干扰，质量指标仍可使用。
+- 可复现启动脚本：`c4/scripts/run_cm001_muon_60m_c4.sh`；tmux 会话：
+  `cm001-muon60m`；主日志：`output/CM001-muon-dense-llama60m-c4-1p1b-ws4-s1243/train.log`。
