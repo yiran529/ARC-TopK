@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import math
 import random
 import argparse
 import numpy as np
@@ -56,7 +57,7 @@ def parse_args(args):
     parser.add_argument("--max_train_tokens", type=training_utils.max_train_tokens_to_number, default=None,
                         help="Number of tokens to train on. Overwrites num_training_steps. "
                              "You can use M and B suffixes, e.g. 100M or 1B.")
-    parser.add_argument("--save_every", type=int, default=10_000)
+    parser.add_argument("--save_every", type=int, default=0)
     parser.add_argument("--save_dir", type=str, default=None)
     parser.add_argument("--tags", type=str, default=None)
     parser.add_argument("--dtype", type=str, default="bfloat16" if torch.cuda.is_bf16_supported() else "float32")
@@ -100,8 +101,103 @@ def parse_args(args):
     return args
 
 
+def has_reached_training_limit(update_step, num_training_steps):
+    return update_step >= num_training_steps
+
+
+def should_stop_evaluation(evaluated_on_tokens, target_eval_tokens):
+    return evaluated_on_tokens >= target_eval_tokens
+
+
+def evaluation_totals_after_batch(total_batches, evaluated_on_tokens, batch_tokens, world_size):
+    return total_batches + 1, evaluated_on_tokens + batch_tokens * world_size
+
+
+def loss_to_perplexity(loss):
+    return math.exp(loss)
+
+
+def collect_communication_metrics(hook_state, optimizer, ddp_comm_bits_total):
+    metrics = {}
+    next_ddp_comm_bits_total = ddp_comm_bits_total
+
+    if hook_state is not None and hasattr(hook_state, "comm_bits_this_round"):
+        ddp_comm_bits_step = hook_state.comm_bits_this_round
+        next_ddp_comm_bits_total += ddp_comm_bits_step
+        metrics.update({
+            "ddp_comm_bits_step": ddp_comm_bits_step,
+            "ddp_comm_bits_total": next_ddp_comm_bits_total,
+        })
+
+        if hasattr(hook_state, "compression_bits_stats"):
+            _, bits_before_total, bits_after_total = hook_state.compression_bits_stats()
+            metrics.update({
+                "ddp_compression_bits_before_total": bits_before_total,
+                "ddp_compression_bits_after_total": bits_after_total,
+            })
+
+    if optimizer is not None and hasattr(optimizer, "communication_bits_stats"):
+        stats = optimizer.communication_bits_stats()
+        step_stats = stats["this_step"]
+        total_stats = stats["total"]
+        for category in ("gradient_presence", "orthogonalization_results"):
+            if category in step_stats or category in total_stats:
+                metrics[f"muon_{category}_bits_step"] = step_stats.get(category, 0)
+                metrics[f"muon_{category}_bits_total"] = total_stats.get(category, 0)
+        metrics["muon_comm_bits_step"] = sum(step_stats.values())
+        metrics["muon_comm_bits_total"] = sum(total_stats.values())
+
+    return metrics, next_ddp_comm_bits_total
+
+
+def build_update_metrics(
+    *,
+    loss,
+    lr,
+    update_step,
+    tokens_seen,
+    tokens_in_update,
+    step_time_s,
+    total_batch_size,
+    batches_in_update,
+    peak_memory_allocated_mb,
+    peak_memory_reserved_mb,
+    communication_metrics=None,
+):
+    metrics = {
+        "loss": loss,
+        "lr": lr,
+        "update_step": update_step,
+        "tokens_seen": tokens_seen,
+        "step_time_s": step_time_s,
+        "throughput_tokens_per_s": tokens_in_update / step_time_s,
+        "throughput_examples": total_batch_size / step_time_s,
+        "throughput_batches": batches_in_update / step_time_s,
+        "peak_memory_allocated_mb": peak_memory_allocated_mb,
+        "peak_memory_reserved_mb": peak_memory_reserved_mb,
+        # Keep the old keys for existing dashboards.
+        "throughput_tokens": tokens_in_update / step_time_s,
+        "peak_memory_MB": peak_memory_allocated_mb,
+    }
+    if communication_metrics is not None:
+        metrics.update(communication_metrics)
+    return metrics
+
+
 @torch.no_grad()
-def evaluate_model(model, dataset_path, preprocess_batched, pad_idx, global_rank, world_size, device, batch_size):
+def evaluate_model(
+    model,
+    dataset_path,
+    preprocess_batched,
+    pad_idx,
+    global_rank,
+    world_size,
+    device,
+    batch_size,
+    *,
+    single_gpu=False,
+    target_eval_tokens=10_000_000,
+):
     _time = time.time()
     
     from requests.exceptions import ConnectionError
@@ -118,7 +214,7 @@ def evaluate_model(model, dataset_path, preprocess_batched, pad_idx, global_rank
     val_data = val_data.shuffle(seed=42) 
     logger.info(f"Loaded validation dataset in {time.time() - _time:.2f} seconds")
 
-    if not args.single_gpu:
+    if not single_gpu:
         val_data = datasets.distributed.split_dataset_by_node(val_data, rank=global_rank, world_size=world_size)
 
     val_data_mapped = val_data.map(
@@ -128,16 +224,14 @@ def evaluate_model(model, dataset_path, preprocess_batched, pad_idx, global_rank
     )
     val_data_mapped.batch = lambda batch_size: training_utils.batch_fn(val_data_mapped, batch_size)
 
-    target_eval_tokens = 10_000_000
     evaluated_on_tokens = 0
     total_loss = torch.tensor(0.0).to(device)
-    total_batches = 1
+    total_batches = 0
     logger.info(f"Eval set prepared in {time.time() - _time:.2f} seconds")
 
     for batch in val_data_mapped.batch(batch_size=batch_size):
-        if evaluated_on_tokens > target_eval_tokens:
+        if should_stop_evaluation(evaluated_on_tokens, target_eval_tokens):
             break
-        total_batches += 1
 
         batch = {k: v.to(device) for k, v in batch.items()}
         labels = batch["input_ids"].clone()
@@ -145,7 +239,11 @@ def evaluate_model(model, dataset_path, preprocess_batched, pad_idx, global_rank
         loss = model(**batch, labels=labels).loss
         total_loss += loss.detach()
 
-        evaluated_on_tokens += (batch["input_ids"] != pad_idx).sum().item() * world_size
+        batch_tokens = (batch["input_ids"] != pad_idx).sum().item()
+        token_world_size = 1 if single_gpu else world_size
+        total_batches, evaluated_on_tokens = evaluation_totals_after_batch(
+            total_batches, evaluated_on_tokens, batch_tokens, token_world_size
+        )
 
     total_loss = total_loss / total_batches
     print(total_loss.item())
@@ -384,6 +482,7 @@ def main(args):
     # model.module.generation_config.pad_token_id = tokenizer.pad_token_id #replace unvalid -1 from config file
     update_time = time.time()
     local_step = 0  # when continue_from is used, local_step != global_step
+    ddp_comm_bits_total = 0
 
     # ##############################
     # TRAINING LOOP
@@ -403,13 +502,13 @@ def main(args):
             torch.cuda.set_rng_state(resume_rng_state["cuda"], device=device)
             resume_rng_state = None
 
-        global_step += 1
-        local_step += 1
-
-        if update_step > args.num_training_steps: 
-            logger.info(f"Reached max number of update steps (f{args.num_training_steps}). Stopping training.")
+        if has_reached_training_limit(update_step, args.num_training_steps):
+            logger.info(f"Reached max number of update steps ({args.num_training_steps}). Stopping training.")
             print(f"Rank {global_rank} stopping training.")
             break
+
+        global_step += 1
+        local_step += 1
 
         
         batch = {k: v.to(device) for k, v in batch.items()}
@@ -442,7 +541,7 @@ def main(args):
         update_time = time.time() - update_time
 
         # save checkpoint by save_every
-        if update_step % args.save_every == 0:
+        if args.save_every > 0 and update_step % args.save_every == 0:
             current_model_directory = f"{args.save_dir}/model_{update_step}"
             dist.barrier()
             if global_rank == 0:
@@ -508,24 +607,32 @@ def main(args):
         tokens_in_update = tokens_seen - tokens_seen_before
         tokens_seen_before = tokens_seen
         batches_in_update = args.gradient_accumulation * world_size
+        communication_metrics, ddp_comm_bits_total = collect_communication_metrics(
+            hook_state, optimizer, ddp_comm_bits_total
+        )
+        if hook_state is not None and hasattr(hook_state, "comm_bits_this_round"):
+            hook_state.comm_bits_this_round = 0
 
         if global_rank == 0:
 
-            peak_memory = torch.cuda.max_memory_allocated() / (1024 * 1024)
-
-            wandb.log({
-                "loss": loss.item(),
-                "lr": lr,
-                "update_step": update_step,
-                "tokens_seen": tokens_seen,
-                "throughput_tokens": tokens_in_update / update_time,
-                "throughput_examples": args.total_batch_size / update_time,
-                "throughput_batches": batches_in_update / update_time,
-                "peak_memory_MB": peak_memory,
-                # "grad_norm": grad_norm,
-                },
+            peak_memory_allocated_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+            peak_memory_reserved_mb = torch.cuda.max_memory_reserved() / (1024 * 1024)
+            wandb.log(build_update_metrics(
+                loss=loss.item(),
+                lr=lr,
+                update_step=update_step,
+                tokens_seen=tokens_seen,
+                tokens_in_update=tokens_in_update,
+                step_time_s=update_time,
+                total_batch_size=args.total_batch_size,
+                batches_in_update=batches_in_update,
+                peak_memory_allocated_mb=peak_memory_allocated_mb,
+                peak_memory_reserved_mb=peak_memory_reserved_mb,
+                communication_metrics=communication_metrics,
+                ),
                 step=global_step,
             )
+        torch.cuda.reset_peak_memory_stats()
         update_time = time.time()
 
     # ##############################
@@ -565,17 +672,27 @@ def main(args):
     # Final evaluation
     logger.info("Running final evaluation")
     model.eval()
-    del loss, optimizer, scheduler
+    del optimizer, scheduler
     import gc; gc.collect()
     torch.cuda.empty_cache()
 
     total_loss, evaluated_on_tokens = evaluate_model(
-        model, args.dataset_path, preprocess_batched, pad_idx, global_rank, world_size, device, args.batch_size
+        model,
+        args.dataset_path,
+        preprocess_batched,
+        pad_idx,
+        global_rank,
+        world_size,
+        device,
+        args.batch_size,
+        single_gpu=args.single_gpu,
     )
+    final_eval_perplexity = loss_to_perplexity(total_loss)
 
     if global_rank == 0:
         wandb.log({
             "final_eval_loss": total_loss,
+            "final_eval_perplexity": final_eval_perplexity,
             "final_eval_tokens": evaluated_on_tokens,
             },
             step=global_step,
@@ -585,6 +702,7 @@ def main(args):
         if args.output_dir is not None :
             all_results = {
                 "final_eval_loss": total_loss,
+                "final_eval_perplexity": final_eval_perplexity,
                 "final_eval_tokens": evaluated_on_tokens,
                 "wandb_link": wandb.run.get_url()
             }
@@ -594,7 +712,9 @@ def main(args):
     logger.info("Script finished successfully")
     print(f"Rank {global_rank} finished successfully")
     dist.barrier()
-    exit()
+    if global_rank == 0:
+        wandb.finish()
+    dist.destroy_process_group()
 
 if __name__ == "__main__":
     print("Starting script")

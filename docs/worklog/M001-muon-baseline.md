@@ -59,3 +59,28 @@ Adam/Muon 与 dense/ARC-TopK 的组合。
   rank-local hook/RNG，并按 `global_step` 跳过 streaming microbatches。严格续训
   要求数据源版本、worker 数与 shuffle 配置保持一致。
 - 回归结果：`15 passed`；所有修改脚本通过 `py_compile` 和 `git diff --check`。
+
+## 2026-09-21：正式 C4 训练入口边界修复
+
+### 目的
+
+为 60M Muon 正式预训练准备可审计的训练步数、评估和运行指标；默认不保存
+checkpoint，只有显式设置 `--save_every > 0` 时才启用周期保存。
+
+### 修改
+
+- 修复训练循环边界：`num_training_steps=N` 现在恰好执行 N 次 optimizer update，
+  不再多执行一次；`--save_every` 默认改为 `0`，关闭时不自动生成 `save_dir`。
+  显式启用周期保存时仍保留原有保存和续训路径。
+- 修正评估批次数从 0 开始，并在达到 10M effective tokens 后停止；最终记录并写入
+  `all_results.json` 的 `final_eval_perplexity=exp(final_eval_loss)`。
+- 每个 update 的 W&B 指标增加明确的 `step_time_s`、
+  `throughput_tokens_per_s`、显存 allocated/reserved，以及可用的 DDP 和 Muon
+  通信 bits（step/total 与 Muon 分类别统计）；保留旧吞吐和显存键兼容已有面板。
+- 正常结束时调用 `wandb.finish()` 和 `dist.destroy_process_group()`，移除 `exit()`。
+
+### 验证
+
+- 新增 CPU 单测覆盖训练步数边界、checkpoint 默认行为、评估 token 边界与批次计数、
+  perplexity、W&B 指标命名及 DDP/Muon 通信统计。
+- 未启动训练、未下载数据、未读取 `/home/wyr/.netrc`。

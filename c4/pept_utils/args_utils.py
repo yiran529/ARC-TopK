@@ -7,7 +7,10 @@ from loguru import logger
 
 def check_args_torchrun_main(args):
 
-    if args.save_dir is None:
+    if args.save_every < 0:
+        raise ValueError("save_every must be non-negative")
+
+    if args.save_every > 0 and args.save_dir is None:
         # use checkpoints / model name, date and time as save directory
         args.save_dir = f"checkpoints/{args.model_config.split('/')[-1].rstrip('.json')}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
 
