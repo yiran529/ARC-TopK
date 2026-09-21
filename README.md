@@ -202,9 +202,10 @@ Example Muon arguments for the C4 command above:
 --lr 0.02 \
 --muon_mu 0.95 \
 --muon_epsilon 1e-8 \
---muon_scalar_lr 0.02 \
+--muon_scalar_lr 0.001 \
 --muon_scalar_beta1 0.9 \
---muon_scalar_beta2 0.95 \
+--muon_scalar_beta2 0.999 \
+--muon_scalar_weight_decay 0.0 \
 --muon_adjust_lr spectral_norm \
 --muon_compile \
 --compressor none
@@ -213,6 +214,8 @@ Example Muon arguments for the C4 command above:
 With a lossy compressor, Muon orthogonalizes the compressed synchronized
 gradient. Since orthogonalization is nonlinear, this is an approximate Muon
 variant rather than a communication-equivalent implementation of dense Muon.
+The optimizer's `communication_bits_stats()` method reports its gradient-layout
+and orthogonalization-result AllGather traffic separately from DDP hook traffic.
 
 ## Citation
 

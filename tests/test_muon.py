@@ -104,10 +104,12 @@ def test_state_dict_resume_matches_uninterrupted_steps():
 
 
 def test_bfloat16_adamw_checkpoint_restores_fp32_moments():
-    bias = nn.Parameter(torch.ones(3, dtype=torch.bfloat16))
+    bias = nn.Parameter(torch.ones(100, dtype=torch.bfloat16))
     optimizer = Muon([{"params": [bias], "algorithm": "adamw"}], lr=0.01)
-    bias.grad = torch.tensor([0.25, -0.5, 1.0], dtype=torch.bfloat16)
+    bias.grad = torch.linspace(-1, 1, 100, dtype=torch.bfloat16)
     optimizer.step()
+    expected_exp_avg = optimizer.state[bias]["exp_avg"].clone()
+    expected_exp_avg_sq = optimizer.state[bias]["exp_avg_sq"].clone()
 
     restored_bias = nn.Parameter(bias.detach().clone())
     restored = Muon([{"params": [restored_bias], "algorithm": "adamw"}], lr=0.01)
@@ -115,7 +117,9 @@ def test_bfloat16_adamw_checkpoint_restores_fp32_moments():
 
     assert restored.state[restored_bias]["exp_avg"].dtype == torch.float32
     assert restored.state[restored_bias]["exp_avg_sq"].dtype == torch.float32
-    next_grad = torch.tensor([-0.125, 0.75, -0.25], dtype=torch.bfloat16)
+    assert torch.equal(restored.state[restored_bias]["exp_avg"], expected_exp_avg)
+    assert torch.equal(restored.state[restored_bias]["exp_avg_sq"], expected_exp_avg_sq)
+    next_grad = torch.linspace(1, -0.5, 100, dtype=torch.bfloat16)
     bias.grad = next_grad.clone()
     restored_bias.grad = next_grad.clone()
     optimizer.step()
@@ -187,7 +191,7 @@ def test_muon_cli_flags_keep_optional_scalar_settings():
     defaults = parser.parse_args([])
     assert defaults.muon_mu == 0.95
     assert defaults.muon_scalar_lr is None
-    assert defaults.muon_scalar_beta2 == 0.95
+    assert defaults.muon_scalar_beta2 == 0.999
     assert defaults.muon_epsilon == 1e-8
     assert defaults.muon_adjust_lr == "spectral_norm"
     assert not defaults.muon_local_orthogonalization
@@ -237,6 +241,12 @@ def _distributed_muon_worker(rank, init_file):
         optimizer.step()
         for p, expected in zip(params, (0.9, 0.9, 0.8)):
             assert torch.allclose(p, torch.full_like(p, expected))
+        stats = optimizer.communication_bits_stats()
+        assert stats["this_step"] == {
+            "gradient_presence": 48,
+            "orthogonalization_results": 512,
+        }
+        assert stats["total"] == stats["this_step"]
     finally:
         dist.destroy_process_group()
 

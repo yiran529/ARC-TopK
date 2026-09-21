@@ -18,9 +18,11 @@ with the unadjusted learning rate, and scale the orthogonalized update by
 for the orthogonalization call to reduce launch overhead.
 
 Use AdamW within the same optimizer for embedding, normalization, bias, and
-output head parameters. A separate scalar learning rate is optional; its
-default is the Muon base learning rate. The optimizer must support PyTorch
-schedulers and `state_dict` save/load. Preserve existing Adam and SGD branches.
+output head parameters. Its default betas are `(0.9, 0.999)`. C4 uses the
+dion language-model recipe of scalar LR `0.001` and scalar weight decay `0`;
+GLUE and CIFAR inherit their task learning rate and decay policy. The optimizer
+must support PyTorch schedulers and `state_dict` save/load. Preserve existing
+Adam and SGD branches.
 
 ## Parameter selection
 

@@ -12,14 +12,14 @@ _OUTPUT_HEAD_NAMES = {"lm_head", "classifier", "score", "fc", "linear"}
 _NORM_MODULES = (nn.LayerNorm, nn.GroupNorm, nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)
 
 
-def add_muon_args(parser):
+def add_muon_args(parser, *, scalar_lr_default=None, scalar_weight_decay_default=None):
     parser.add_argument("--muon_mu", type=float, default=0.95, help="Muon momentum")
     parser.add_argument("--muon_epsilon", type=float, default=1e-8, help="Polar Express normalization epsilon")
-    parser.add_argument("--muon_scalar_lr", type=float, default=None, help="AdamW fallback LR; defaults to base LR")
+    parser.add_argument("--muon_scalar_lr", type=float, default=scalar_lr_default, help="AdamW fallback LR; defaults to base LR")
     parser.add_argument("--muon_scalar_beta1", type=float, default=0.9, help="AdamW fallback beta1")
-    parser.add_argument("--muon_scalar_beta2", type=float, default=0.95, help="AdamW fallback beta2")
+    parser.add_argument("--muon_scalar_beta2", type=float, default=0.999, help="AdamW fallback beta2")
     parser.add_argument("--muon_scalar_eps", type=float, default=1e-8, help="AdamW fallback epsilon")
-    parser.add_argument("--muon_scalar_weight_decay", type=float, default=None, help="AdamW fallback weight decay; defaults to base weight decay")
+    parser.add_argument("--muon_scalar_weight_decay", type=float, default=scalar_weight_decay_default, help="AdamW fallback weight decay; defaults to base weight decay")
     parser.add_argument(
         "--muon_adjust_lr", choices=("spectral_norm", "rms_norm", "none"),
         default="spectral_norm", help="Matrix-size learning-rate scaling",
@@ -39,7 +39,7 @@ def build_muon_optimizer(
     mu: float = 0.95,
     weight_decay: float = 0.01,
     scalar_weight_decay: Optional[float] = None,
-    scalar_betas: tuple[float, float] = (0.9, 0.95),
+    scalar_betas: tuple[float, float] = (0.9, 0.999),
     scalar_epsilon: float = 1e-8,
     muon_epsilon: float = 1e-8,
     adjust_lr: Optional[str] = "spectral_norm",

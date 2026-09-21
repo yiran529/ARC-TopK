@@ -25,7 +25,12 @@ from c4.pept_utils import training_utils, args_utils
 from c4.pept_utils.dataloader import PreprocessedIterableDataset
 from c4.pept_utils.modeling_llama import LlamaForCausalLM
 
-from comm_hooks.utils import add_comm_hook_args, register_comm_hook_for_ddp_model
+from comm_hooks.utils import (
+    add_comm_hook_args,
+    load_comm_hook_state,
+    register_comm_hook_for_ddp_model,
+    save_comm_hook_state,
+)
 from optimizers import add_muon_args, build_muon_optimizer
 
 transformers.logging.set_verbosity_error()
@@ -82,7 +87,7 @@ def parse_args(args):
     # Compressor arguments
     from comm_hooks.utils import add_comm_hook_args
     add_comm_hook_args(parser)
-    add_muon_args(parser)
+    add_muon_args(parser, scalar_lr_default=0.001, scalar_weight_decay_default=0.0)
     
     args = parser.parse_args(args)
 
@@ -251,6 +256,7 @@ def main(args):
     beginning_step = 0
     tokens_seen = 0
     tokens_seen_before = 0
+    resume_rng_state = None
 
     if args.continue_from is not None:
         logger.info("*" * 40)
@@ -285,6 +291,11 @@ def main(args):
             logger.info(f"Will train for {args.num_training_steps - update_step} update steps")
         else:
             logger.warning(f"Did not find training state in {args.continue_from}, global step will start from zero")
+        rng_path = os.path.join(args.continue_from, f"rng_rank{global_rank}.pt")
+        if os.path.exists(rng_path):
+            resume_rng_state = torch.load(rng_path, map_location="cpu", weights_only=False)
+        else:
+            logger.warning(f"Did not find rank-local RNG state at {rng_path}")
         logger.info("*" * 40)
     
     if args.dtype in ["bf16", "bfloat16"]:
@@ -346,6 +357,7 @@ def main(args):
         scheduler.load_state_dict(checkpoint['scheduler'])
         logger.info(f"Scheduler state loaded from {checkpoint_path}")
 
+    hook_state = None
     if not args.single_gpu:
         # print(f"model type: {type(model)}")
         # print(model)
@@ -356,7 +368,9 @@ def main(args):
             broadcast_buffers=False,
         )
         process_group = dist.distributed_c10d._get_default_group()
-        register_comm_hook_for_ddp_model(model, process_group, args) # hook
+        hook_state = register_comm_hook_for_ddp_model(model, process_group, args) # hook
+        if args.continue_from is not None:
+            load_comm_hook_state(hook_state, args.continue_from, device=device)
  
     # size:
     # if global_rank==0:
@@ -378,6 +392,15 @@ def main(args):
     torch.cuda.reset_peak_memory_stats()
     n_lora_restarts = 0
     for batch_idx, batch in enumerate(dataloader):
+
+        if batch_idx < global_step:
+            continue
+        if resume_rng_state is not None:
+            random.setstate(resume_rng_state["python"])
+            np.random.set_state(resume_rng_state["numpy"])
+            torch.set_rng_state(resume_rng_state["torch"])
+            torch.cuda.set_rng_state(resume_rng_state["cuda"], device=device)
+            resume_rng_state = None
 
         global_step += 1
         local_step += 1
@@ -418,40 +441,50 @@ def main(args):
         update_time = time.time() - update_time
 
         # save checkpoint by save_every
-        if local_step > args.gradient_accumulation and update_step % args.save_every == 0 and global_rank == 0:
+        if update_step % args.save_every == 0:
             current_model_directory = f"{args.save_dir}/model_{update_step}"
-            logger.info(f"Saving model and optimizer to {current_model_directory}, update step {update_step}")
-            save_dir_path = os.path.abspath(args.save_dir)
-            os.makedirs(save_dir_path, exist_ok=True)
-            # model.module.save_pretrained(current_model_directory, max_shard_size='100GB')
+            dist.barrier()
+            if global_rank == 0:
+                logger.info(f"Saving model and optimizer to {current_model_directory}, update step {update_step}")
+                os.makedirs(current_model_directory, exist_ok=True)
+                model_to_save = model if args.single_gpu else model.module
+                model_to_save.save_pretrained(current_model_directory, max_shard_size='100GB')
 
-            optimizer_checkpoint = {
-                "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict(),
-                "update_step": update_step,
-                "global_step": global_step,
-                "config": run_config,
-                "wandb": wandb.run.dir,
-                "dtype": args.dtype,
-            }
-            # torch.save(optimizer_checkpoint, f"{current_model_directory}/optimizer.pt")
+                optimizer_checkpoint = {
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "update_step": update_step,
+                    "global_step": global_step,
+                    "config": run_config,
+                    "wandb": wandb.run.dir,
+                    "dtype": args.dtype,
+                }
+                torch.save(optimizer_checkpoint, f"{current_model_directory}/optimizer.pt")
 
-            training_state_checkpoint = {
-                "global_step": global_step,
-                "update_step": update_step,
-                "tokens_seen": tokens_seen,
-                "tokens_seen_before": tokens_seen_before,
-                "update_time": update_time,
-            }
-            # with open(f"{current_model_directory}/training_state.json", "w") as f:
-            #     json.dump(training_state_checkpoint, f, indent=4)
-                
-            # save wandb related info
-            wandb_info = {
-                "wandb_id": wandb.run.id,
-            }
-            # with open(f"{args.save_dir}/wandb.json", "w") as f:
-            #     json.dump(wandb_info, f, indent=4)
+                training_state_checkpoint = {
+                    "global_step": global_step,
+                    "update_step": update_step,
+                    "tokens_seen": tokens_seen,
+                    "tokens_seen_before": tokens_seen_before,
+                    "update_time": update_time,
+                }
+                with open(f"{current_model_directory}/training_state.json", "w") as f:
+                    json.dump(training_state_checkpoint, f, indent=4)
+
+                with open(f"{args.save_dir}/wandb.json", "w") as f:
+                    json.dump({"wandb_id": wandb.run.id}, f, indent=4)
+            dist.barrier()
+            save_comm_hook_state(hook_state, current_model_directory)
+            torch.save(
+                {
+                    "python": random.getstate(),
+                    "numpy": np.random.get_state(),
+                    "torch": torch.get_rng_state(),
+                    "cuda": torch.cuda.get_rng_state(device=device),
+                },
+                f"{current_model_directory}/rng_rank{global_rank}.pt",
+            )
+            dist.barrier()
 
         # evaluation
         if update_step % args.eval_every == 0 or update_step == 1:

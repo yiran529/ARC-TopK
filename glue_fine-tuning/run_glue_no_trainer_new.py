@@ -53,7 +53,13 @@ from wandb import Html
 
 ###
 import torch.distributed as dist
-from comm_hooks.utils import register_comm_hook_for_ddp_model, add_comm_hook_args, name_func_glue
+from comm_hooks.utils import (
+    add_comm_hook_args,
+    load_comm_hook_state,
+    name_func_glue,
+    register_comm_hook_for_ddp_model,
+    save_comm_hook_state,
+)
 from optimizers import add_muon_args, build_muon_optimizer
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -530,7 +536,7 @@ def main():
     # Compressor
     process_group = dist.distributed_c10d._get_default_group()
     logger.info(f"args.compressor is {args.compressor}")
-    register_comm_hook_for_ddp_model(model, process_group, args, optimizer=optimizer)
+    hook_state = register_comm_hook_for_ddp_model(model, process_group, args, optimizer=optimizer)
 
     # Figure out how many steps we should save the Accelerator states
     checkpointing_steps = args.checkpointing_steps
@@ -593,6 +599,7 @@ def main():
 
         accelerator.print(f"Resumed from checkpoint: {checkpoint_path}")
         accelerator.load_state(checkpoint_path)
+        load_comm_hook_state(hook_state, checkpoint_path, device=accelerator.device)
         # Extract `epoch_{i}` or `step_{i}`
         training_difference = os.path.splitext(path)[0]
 
@@ -633,7 +640,7 @@ def main():
                 total_loss += loss.detach().float()
             loss = loss / args.gradient_accumulation_steps
             accelerator.backward(loss) 
-            if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
+            if (step + 1) % args.gradient_accumulation_steps == 0 or step == len(active_dataloader) - 1:
                 optimizer.step()
                 if args.check_grad: 
                     check_grad_identity(model)
@@ -641,6 +648,15 @@ def main():
                 optimizer.zero_grad()
                 progress_bar.update(1) 
                 completed_steps += 1
+
+                if isinstance(checkpointing_steps, int) and completed_steps % checkpointing_steps == 0:
+                    output_dir = f"step_{completed_steps}"
+                    if args.output_dir is not None:
+                        output_dir = os.path.join(args.output_dir, output_dir)
+                    accelerator.save_state(output_dir)
+                    accelerator.wait_for_everyone()
+                    save_comm_hook_state(hook_state, output_dir)
+                    accelerator.wait_for_everyone()
 
                 # peak_memory = torch.cuda.max_memory_allocated() / (1024 * 1024)
                 
@@ -656,13 +672,6 @@ def main():
                 #         step=completed_steps,
                 #     )
                 # logger.info(f"step {completed_steps}, loss: {loss.item()}, lr: {optimizer.param_groups[0]['lr']}, peak_memory_MB: {peak_memory}")
-
-            if isinstance(checkpointing_steps, int):
-                if completed_steps % checkpointing_steps == 0:
-                    output_dir = f"step_{completed_steps}"
-                    if args.output_dir is not None:
-                        output_dir = os.path.join(args.output_dir, output_dir)
-                    accelerator.save_state(output_dir)
 
             if completed_steps >= args.max_train_steps:
                 break
@@ -727,6 +736,9 @@ def main():
             if args.output_dir is not None:
                 output_dir = os.path.join(args.output_dir, output_dir)
             accelerator.save_state(output_dir)
+            accelerator.wait_for_everyone()
+            save_comm_hook_state(hook_state, output_dir)
+            accelerator.wait_for_everyone()
 
     end_time = time.time()  
     print('Traing Ends！！！！！')

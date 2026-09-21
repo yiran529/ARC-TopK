@@ -41,3 +41,21 @@ Adam/Muon 与 dense/ARC-TopK 的组合。
 先运行小模型 dense Muon smoke test，确认 loss 与各 rank 参数一致；再用
 相同训练配置比较 local/distributed orthogonalization，以及 dense/ARC-TopK
 通信组合。若正交化仍是主要瓶颈，再移植 Triton Polar Express 内核。
+
+## 2026-09-21：恢复精度与实验口径修正
+
+- 修复 BF16/FP16 参数加载 checkpoint 时 AdamW FP32 moments 被父类先降精度
+  转换的问题；现在加载前保留 checkpoint 中的 FP32 moments，参数映射完成后
+  原值恢复。
+- AdamW fallback 的默认 beta 改为 `(0.9, 0.999)`。C4 默认采用 dion 正式
+  语言模型实验的 scalar LR `0.001`、scalar weight decay `0`；GLUE/CIFAR
+  继续继承各自任务 LR 和 decay。
+- 修复 GLUE 在第一个 microbatch 提前更新的问题，并将 step checkpoint 移入
+  optimizer 更新分支，避免同一步重复保存。
+- Muon 独立累计 gradient-presence 与正交化结果 AllGather 的全网 bit 数；该值
+  与 DDP hook 通信量分开报告。
+- ARC hook 增加 rank-local error feedback、迭代计数和 RNG 状态保存恢复。
+  GLUE checkpoint 已接入；C4 同时恢复模型、optimizer/scheduler、训练计数、
+  rank-local hook/RNG，并按 `global_step` 跳过 streaming microbatches。严格续训
+  要求数据源版本、worker 数与 shuffle 配置保持一致。
+- 回归结果：`15 passed`；所有修改脚本通过 `py_compile` 和 `git diff --check`。

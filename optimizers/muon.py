@@ -61,7 +61,7 @@ class Muon(Optimizer):
         params,
         lr: float = 0.01,
         mu: float = 0.95,
-        betas: tuple[float, float] = (0.9, 0.95),
+        betas: tuple[float, float] = (0.9, 0.999),
         epsilon: float = 1e-8,
         weight_decay: float = 0.01,
         nesterov: bool = True,
@@ -95,6 +95,8 @@ class Muon(Optimizer):
             self._orthogonalize = torch.compile(self._orthogonalize, dynamic=False, fullgraph=True)
         self._distributed_orthogonalization = distributed_orthogonalization
         self._process_group = process_group
+        self._communication_bits = {"gradient_presence": 0, "orthogonalization_results": 0}
+        self._communication_bits_this_step = {"gradient_presence": 0, "orthogonalization_results": 0}
 
         # Fixed state keys make optimizer checkpointing rank-consistent even if
         # some parameters receive no gradient on a particular DDP step.
@@ -124,6 +126,7 @@ class Muon(Optimizer):
             with torch.enable_grad():
                 loss = closure()
 
+        self._communication_bits_this_step = {"gradient_presence": 0, "orthogonalization_results": 0}
         self._validate_distributed_grad_layout()
         for group in self.param_groups:
             if group["algorithm"] == "muon":
@@ -134,15 +137,45 @@ class Muon(Optimizer):
 
     def load_state_dict(self, state_dict):
         """Load state while preserving FP32 AdamW moments for reduced-precision parameters."""
+        preserved_moments = []
+        saved_groups = state_dict.get("param_groups", [])
+        saved_state = state_dict.get("state", {})
+        if len(saved_groups) == len(self.param_groups):
+            for current_group, saved_group in zip(self.param_groups, saved_groups):
+                if current_group.get("algorithm") != "adamw":
+                    continue
+                for param, saved_param_id in zip(current_group["params"], saved_group["params"]):
+                    state = saved_state.get(saved_param_id, {})
+                    if param.dtype in (torch.bfloat16, torch.float16) and {
+                        "exp_avg", "exp_avg_sq"
+                    }.issubset(state):
+                        preserved_moments.append(
+                            (
+                                param,
+                                state["exp_avg"].detach().to(device=param.device, dtype=torch.float32).clone(),
+                                state["exp_avg_sq"].detach().to(device=param.device, dtype=torch.float32).clone(),
+                            )
+                        )
         super().load_state_dict(state_dict)
-        for group in self.param_groups:
-            if group["algorithm"] != "adamw":
-                continue
-            for param in group["params"]:
-                state = self.state[param]
-                if param.dtype in (torch.bfloat16, torch.float16):
-                    state["exp_avg"] = state["exp_avg"].float()
-                    state["exp_avg_sq"] = state["exp_avg_sq"].float()
+        for param, exp_avg, exp_avg_sq in preserved_moments:
+            self.state[param]["exp_avg"] = exp_avg
+            self.state[param]["exp_avg_sq"] = exp_avg_sq
+
+    def communication_bits_stats(self):
+        """Return Muon collective traffic as global network bits.
+
+        An AllGather of one rank-local tensor is counted as
+        ``world_size * (world_size - 1) * tensor_bits``.
+        """
+        return {
+            "total": dict(self._communication_bits),
+            "this_step": dict(self._communication_bits_this_step),
+        }
+
+    def _record_all_gather(self, category: str, tensor: Tensor, world_size: int):
+        bits = world_size * (world_size - 1) * tensor.numel() * tensor.element_size() * 8
+        self._communication_bits[category] += bits
+        self._communication_bits_this_step[category] += bits
 
     def _validate_distributed_grad_layout(self):
         """Fail collectively when ranks would issue different result collectives."""
@@ -178,6 +211,7 @@ class Muon(Optimizer):
         )
         gathered = [torch.empty_like(presence) for _ in range(dist.get_world_size(process_group))]
         dist.all_gather(gathered, presence, group=process_group)
+        self._record_all_gather("gradient_presence", presence, len(gathered))
         if any(not torch.equal(layout, gathered[0]) for layout in gathered[1:]):
             raise RuntimeError(
                 "Muon gradient presence differs across ranks; distributed "
@@ -251,6 +285,7 @@ class Muon(Optimizer):
         local_result = self._orthogonalize(mine, epsilon).contiguous()
         gathered = [torch.empty_like(local_result) for _ in range(world_size)]
         dist.all_gather(gathered, local_result, group=process_group)
+        self._record_all_gather("orthogonalization_results", local_result, world_size)
         return torch.cat(gathered, dim=0)[:original_count]
 
     def _step_adamw_group(self, group):

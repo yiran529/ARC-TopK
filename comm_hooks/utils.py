@@ -1,10 +1,36 @@
 import torch
 import torch.distributed as dist
+import os
 
 import logging
 #from optimizer import PrecondAdam
 
 logger = logging.getLogger(__name__)
+
+
+def save_comm_hook_state(hook_state, checkpoint_dir):
+    """Save one rank's communication-hook state beside the training checkpoint."""
+    if hook_state is None:
+        return
+    rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    path = os.path.join(checkpoint_dir, f"comm_hook_rank{rank}.pt")
+    temporary_path = f"{path}.tmp"
+    torch.save(hook_state.state_dict(), temporary_path)
+    os.replace(temporary_path, path)
+
+
+def load_comm_hook_state(hook_state, checkpoint_dir, *, device=None):
+    """Load this rank's hook state; return False for legacy checkpoints."""
+    if hook_state is None:
+        return False
+    rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+    path = os.path.join(checkpoint_dir, f"comm_hook_rank{rank}.pt")
+    if not os.path.exists(path):
+        logger.warning("No rank-local communication-hook state found at %s", path)
+        return False
+    hook_state.load_state_dict(torch.load(path, map_location="cpu"), device=device)
+    return True
 
 def _get_allgather_out_list(all_gather_in_list, world_size): 
     out_list = [
@@ -85,6 +111,58 @@ class HookState:
             self.total_bit_before_compression,
             self.total_bit_after_compression,
         )
+
+    def state_dict(self):
+        """Serialize rank-local state needed for an exact hook continuation."""
+        scalar_names = (
+            "iter", "total_bit_before_compression", "total_bit_after_compression",
+            "comm_bits_this_round", "adam_freeze_key", "large_batch_init",
+            "compression_started", "compress_ratio",
+        )
+        state = {
+            "version": 1,
+            "scalars": {
+                name: getattr(self, name) for name in scalar_names if hasattr(self, name)
+            },
+        }
+        for name in ("error_dict", "global_error_dict"):
+            if hasattr(self, name):
+                state[name] = {
+                    key: value.detach().cpu().clone()
+                    for key, value in getattr(self, name).items()
+                }
+        if hasattr(self, "rng"):
+            state["rng_state"] = self.rng.get_state().clone()
+        if hasattr(self, "generator"):
+            state["generator_states"] = {
+                key: generator.get_state().clone()
+                for key, generator in self.generator.items()
+            }
+        return state
+
+    def load_state_dict(self, state_dict, *, device=None):
+        """Restore a state produced by :meth:`state_dict` onto this rank."""
+        if state_dict.get("version") != 1:
+            raise ValueError("Unsupported communication-hook checkpoint version")
+        device = torch.device("cpu") if device is None else torch.device(device)
+        for name, value in state_dict.get("scalars", {}).items():
+            if hasattr(self, name):
+                setattr(self, name, value)
+        for name in ("error_dict", "global_error_dict"):
+            if name in state_dict and hasattr(self, name):
+                setattr(self, name, {
+                    key: value.to(device=device).clone()
+                    for key, value in state_dict[name].items()
+                })
+        if "rng_state" in state_dict and hasattr(self, "rng"):
+            self.rng.set_state(state_dict["rng_state"].cpu())
+        if "generator_states" in state_dict and hasattr(self, "generator"):
+            restored = {}
+            for key, generator_state in state_dict["generator_states"].items():
+                generator = torch.Generator(device=device)
+                generator.set_state(generator_state.cpu())
+                restored[key] = generator
+            self.generator = restored
 
 
 def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None):
@@ -279,4 +357,3 @@ def name_func_glue(args):
                 run_name =f"lr{args.learning_rate}_bs{args.per_device_train_batch_size}_seed{args.seed}_{args.compressor}_{args.use_error_feedback}_wd{args.weight_decay}_mo{args.momentum}_ratio{args.compress_ratio}"
                 
     return program_name, run_name
-
