@@ -22,6 +22,7 @@ from tqdm import tqdm
 from loguru import logger
 
 from c4.pept_utils import training_utils, args_utils
+from c4.pept_utils.c4_data import load_c4_split
 from c4.pept_utils.dataloader import PreprocessedIterableDataset
 from c4.pept_utils.modeling_llama import LlamaForCausalLM
 
@@ -106,7 +107,7 @@ def evaluate_model(model, dataset_path, preprocess_batched, pad_idx, global_rank
     from requests.exceptions import ConnectionError
     for attempt in range(5):
         try:
-            val_data = datasets.load_dataset(dataset_path, split="validation", streaming=True) 
+            val_data = load_c4_split(dataset_path, split="validation", repeat_local=False)
         except ConnectionError as e:
                     if attempt < 5 - 1:
                         print(f"Connection error: {e}. Retrying...")
@@ -207,7 +208,7 @@ def main(args):
     from requests.exceptions import ConnectionError
     for attempt in range(5): 
         try:
-            data = datasets.load_dataset(args.dataset_path, split="train", streaming=True) 
+            data = load_c4_split(args.dataset_path, split="train", repeat_local=True)
         except ConnectionError as e:
                     if attempt < 5 - 1:
                         print(f"Connection error: {e}. Retrying...")

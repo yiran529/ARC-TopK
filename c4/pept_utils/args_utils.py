@@ -1,4 +1,5 @@
 import os
+import math
 from datetime import datetime
 
 from loguru import logger
@@ -20,7 +21,8 @@ def check_args_torchrun_main(args):
     assert args.total_batch_size % args.batch_size == 0, "total_batch_size must be divisible by batch_size"
 
     if args.max_train_tokens is not None:
-        args.num_training_steps = args.max_train_tokens // args.total_batch_size
+        tokens_per_update = args.total_batch_size * args.max_length
+        args.num_training_steps = math.ceil(args.max_train_tokens / tokens_per_update)
         logger.info(f"Training for {args.num_training_steps} update steps")
 
     if args.continue_from is not None:
