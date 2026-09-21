@@ -80,6 +80,10 @@ checkpoint，只有显式设置 `--save_every > 0` 时才启用周期保存。
 - 每个 update 的 W&B 指标增加明确的 `step_time_s`、
   `throughput_tokens_per_s`、显存 allocated/reserved，以及可用的 DDP 和 Muon
   通信 bits（step/total 与 Muon 分类别统计）；保留旧吞吐和显存键兼容已有面板。
+- 梯度累积时，非最后一个 microbatch 在 DDP `no_sync()` 中执行 forward/backward，
+  只有完成一个完整 accumulation group 才同步梯度；W&B 的 `loss` 改为该 update
+  内所有 microbatch 原始 loss 的算术平均，并在 update 后清零。W&B 的 step 统一使用
+  optimizer `update_step`，新增 `--eval_tokens`（默认 10M）可缩短 smoke evaluation。
 - 正常结束时调用 `wandb.finish()` 和 `dist.destroy_process_group()`，移除 `exit()`。
 
 ### 验证

@@ -4,6 +4,7 @@ import json
 import math
 import random
 import argparse
+from contextlib import nullcontext
 import numpy as np
 
 import torch
@@ -51,6 +52,7 @@ def parse_args(args):
     parser.add_argument("--activation_checkpointing", action="store_true")
     parser.add_argument("--warmup_steps", type=int, default=1_000)
     parser.add_argument("--eval_every", type=int, default=5_000)
+    parser.add_argument("--eval_tokens", type=int, default=10_000_000)
     parser.add_argument("--num_training_steps", type=int, default=10_000,
                         help="Number of **update steps** to train for. "
                              "Notice that gradient accumulation is taken into account.")
@@ -103,6 +105,14 @@ def parse_args(args):
 
 def has_reached_training_limit(update_step, num_training_steps):
     return update_step >= num_training_steps
+
+
+def should_sync_gradients(microbatch_step, gradient_accumulation):
+    return microbatch_step % gradient_accumulation == 0
+
+
+def mean_update_loss(loss_total, microbatch_count):
+    return loss_total / microbatch_count
 
 
 def should_stop_evaluation(evaluated_on_tokens, target_eval_tokens):
@@ -494,6 +504,8 @@ def main(args):
     step_start_time = time.perf_counter()
     local_step = 0  # when continue_from is used, local_step != global_step
     ddp_comm_bits_total = 0
+    update_loss_total = 0.0
+    update_microbatch_count = 0
 
     # ##############################
     # TRAINING LOOP
@@ -521,17 +533,21 @@ def main(args):
         global_step += 1
         local_step += 1
 
-        
         batch = {k: v.to(device) for k, v in batch.items()}
         labels = batch["input_ids"].clone()
         labels[labels == pad_idx] = -100
         tokens_seen += (batch["input_ids"] != pad_idx).sum().item() * world_size 
 
-        loss = model(**batch, labels=labels).loss
-        scaled_loss = loss / args.gradient_accumulation
-        scaled_loss.backward()
+        sync_gradients = should_sync_gradients(global_step, args.gradient_accumulation)
+        sync_context = nullcontext() if args.single_gpu or sync_gradients else model.no_sync()
+        with sync_context:
+            loss = model(**batch, labels=labels).loss
+            update_loss_total += loss.detach().float()
+            update_microbatch_count += 1
+            scaled_loss = loss / args.gradient_accumulation
+            scaled_loss.backward()
 
-        if global_step % args.gradient_accumulation != 0:
+        if not sync_gradients:
             continue
 
         # The below code is only executed during the update step
@@ -610,7 +626,7 @@ def main(args):
             #         "final_eval_loss": total_loss,
             #         "final_eval_tokens": evaluated_on_tokens,
             #         },
-            #         step=global_step,
+            #         step=update_step,
             #     )
             # logger.info(f"Eval loss at step {update_step}: {total_loss}")
 
@@ -630,7 +646,7 @@ def main(args):
             peak_memory_allocated_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
             peak_memory_reserved_mb = torch.cuda.max_memory_reserved() / (1024 * 1024)
             wandb.log(build_update_metrics(
-                loss=loss.item(),
+                loss=mean_update_loss(update_loss_total, update_microbatch_count).item(),
                 lr=lr,
                 update_step=update_step,
                 tokens_seen=tokens_seen,
@@ -642,8 +658,10 @@ def main(args):
                 peak_memory_reserved_mb=peak_memory_reserved_mb,
                 communication_metrics=communication_metrics,
                 ),
-                step=global_step,
-            )
+                step=update_step,
+                )
+        update_loss_total = 0.0
+        update_microbatch_count = 0
         torch.cuda.reset_peak_memory_stats()
         step_start_time = time.perf_counter()
 
@@ -698,6 +716,7 @@ def main(args):
         device,
         args.batch_size,
         single_gpu=args.single_gpu,
+        target_eval_tokens=args.eval_tokens,
     )
     final_eval_perplexity = loss_to_perplexity(total_loss)
 
@@ -707,7 +726,7 @@ def main(args):
             "final_eval_perplexity": final_eval_perplexity,
             "final_eval_tokens": evaluated_on_tokens,
             },
-            step=global_step,
+            step=update_step,
         )
         logger.info(f"Final eval loss: {total_loss}")
         

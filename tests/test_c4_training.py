@@ -7,6 +7,8 @@ from c4.run_llama_pretraining import (
     evaluation_loss_totals_after_batch,
     has_reached_training_limit,
     loss_to_perplexity,
+    mean_update_loss,
+    should_sync_gradients,
     should_stop_evaluation,
 )
 
@@ -14,6 +16,16 @@ from c4.run_llama_pretraining import (
 def test_training_limit_stops_before_the_next_update():
     assert not has_reached_training_limit(update_step=0, num_training_steps=1)
     assert has_reached_training_limit(update_step=1, num_training_steps=1)
+
+
+def test_gradient_sync_happens_only_on_the_last_microbatch_of_each_update():
+    assert [should_sync_gradients(step, 4) for step in range(1, 9)] == [
+        False, False, False, True, False, False, False, True
+    ]
+
+
+def test_update_loss_is_the_arithmetic_mean_of_microbatch_losses():
+    assert mean_update_loss(2.0 + 4.0 + 8.0, 3) == 14.0 / 3.0
 
 
 def test_evaluation_stops_when_effective_token_target_is_reached():

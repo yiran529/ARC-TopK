@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+from c4.run_llama_pretraining import parse_args
 from c4.pept_utils.args_utils import check_args_torchrun_main
 
 
@@ -64,3 +65,12 @@ def test_checkpoint_directory_is_generated_when_periodic_saving_is_enabled():
     result = check_args_torchrun_main(args)
 
     assert result.save_dir.startswith("checkpoints/llama_130m-")
+
+
+def test_eval_tokens_defaults_to_ten_million():
+    args = parse_args([
+        "--model_config", "c4/configs/llama_60m.json",
+        "--batch_size", "1",
+    ])
+
+    assert args.eval_tokens == 10_000_000
