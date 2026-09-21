@@ -171,6 +171,34 @@ done
 
 You can also use [script](https://github.com/Aris-ma/ARC-TopK-release/blob/master/c4/scripts/c4_none_0123.sh) to run it.
 
+#### Hub streaming or local raw C4 shards
+
+By default, `--dataset_path allenai/c4` streams the English split from the Hub. For
+repeatable offline runs, download the first 30 English training shards and one
+validation shard at the pinned dataset revision with:
+
+```bash
+python c4/scripts/download_c4_raw_shards.py \
+    --output-dir data/c4/en-30-shards \
+    --revision 1588ec454efa1a09f29cd18ddd04fe05fc8653a2
+```
+
+The downloader stores raw compressed JSONL only (about 9.6 GB), records the
+selected files and sizes in `manifest.json`, and is safe to rerun. Pass a full
+40-character commit SHA for `--revision`; the manifest records that revision.
+Use the same
+local directory for training, for example:
+
+```bash
+--dataset_path data/c4/en-30-shards --max_train_tokens 3B
+```
+
+Both Hub and local sources use the existing `t5-base` tokenizer dynamically at
+runtime; no pre-tokenized copy is created. Local shards are read in deterministic
+shared lexical order, so comparison runs can use the same manifest. The finite
+30-shard stream is repeated when necessary if the nominal 3B token slots outlast
+the available local examples.
+
 
 ### Muon optimizer
 
