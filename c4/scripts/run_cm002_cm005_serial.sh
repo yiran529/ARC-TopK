@@ -4,7 +4,12 @@ set -uo pipefail
 
 cd "$(dirname "$0")/../.."
 
-suite_id="CM002-CM005-serial"
+run_mode="${1:-all}"
+if [ "${run_mode}" = "arc_rerun" ]; then
+    suite_id="CM003-CM005-arc-rerun"
+else
+    suite_id="CM002-CM005-serial"
+fi
 suite_dir="output/${suite_id}"
 status_file="${suite_dir}/status.tsv"
 mkdir -p "${suite_dir}"
@@ -60,6 +65,7 @@ run_experiment() {
         .venv/bin/torchrun
         --standalone
         --nproc_per_node=4
+        --
         c4/run_llama_pretraining.py
         --model_config "c4/configs/${model_name}.json"
         --dataset_path /dev/shm/wyr_tmp/c4/en-30-shards
@@ -122,16 +128,30 @@ run_experiment() {
         "${run_id}" "$(date --iso-8601=seconds)" "${exit_code}" >> "${status_file}"
 }
 
-run_experiment "CM002-dense-adam-llama60m-c4-1p1b-ws4-s1243" \
-    "llama_60m" 32 4 8393 "adamw" "none"
+if [ "${run_mode}" = "all" ]; then
+    run_experiment "CM002-dense-adam-llama60m-c4-1p1b-ws4-s1243" \
+        "llama_60m" 32 4 8393 "adamw" "none"
+fi
 
-run_experiment "CM003-m002-arctopk-muon-llama60m-c4-1p1b-ws4-s1243" \
-    "llama_60m" 32 4 8393 "muon" "group_topk_no_reshape"
+if [ "${run_mode}" = "arc_rerun" ]; then
+    run_experiment "CM003-m002-arctopk-muon-llama60m-c4-1p1b-ws4-s1243-rerun1" \
+        "llama_60m" 32 4 8393 "muon" "group_topk_no_reshape"
+else
+    run_experiment "CM003-m002-arctopk-muon-llama60m-c4-1p1b-ws4-s1243" \
+        "llama_60m" 32 4 8393 "muon" "group_topk_no_reshape"
+fi
 
-run_experiment "CM004-m001-dense-muon-llama130m-c4-2p2b-ws4-s1243" \
-    "llama_130m" 16 8 16785 "muon" "none"
+if [ "${run_mode}" = "all" ]; then
+    run_experiment "CM004-m001-dense-muon-llama130m-c4-2p2b-ws4-s1243" \
+        "llama_130m" 16 8 16785 "muon" "none"
+fi
 
-run_experiment "CM005-m002-arctopk-muon-llama130m-c4-2p2b-ws4-s1243" \
-    "llama_130m" 16 8 16785 "muon" "group_topk_no_reshape"
+if [ "${run_mode}" = "arc_rerun" ]; then
+    run_experiment "CM005-m002-arctopk-muon-llama130m-c4-2p2b-ws4-s1243-rerun1" \
+        "llama_130m" 16 8 16785 "muon" "group_topk_no_reshape"
+else
+    run_experiment "CM005-m002-arctopk-muon-llama130m-c4-2p2b-ws4-s1243" \
+        "llama_130m" 16 8 16785 "muon" "group_topk_no_reshape"
+fi
 
 printf 'suite_finished_at\t%s\n' "$(date --iso-8601=seconds)" >> "${status_file}"
