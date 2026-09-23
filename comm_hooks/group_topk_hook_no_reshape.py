@@ -200,7 +200,6 @@ def group_topk_hook(
     # The input tensor is a flattened 1D tensor.
     input_tensor = bucket.buffer()  
     tensors = bucket.gradients() 
- 
 
     # Run vanilla allreduce in the first `start_compress_iter` iterations.
     if state.iter < state.start_compress_iter:
@@ -283,7 +282,5 @@ def group_topk_hook(
     fut.set_result(input_tensor)
 
     return fut
-
-
 
 

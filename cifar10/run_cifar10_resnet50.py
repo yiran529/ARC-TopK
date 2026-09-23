@@ -87,31 +87,32 @@ assert args.optimizer in supported_optimizers, "`optimizer` should be one of the
 
 ###
 if args.rank == 0 and args.use_wandb:
+    wandb_project = os.environ.get("WANDB_PROJECT")
     if args.optimizer=="adamw":
         if args.compressor=="group_topk_no_reshape":
             wandb.init(
-                project=f"cifar10_resnet50_group_topk_{args.use_error_feedback}", 
+                project=wandb_project or f"cifar10_resnet50_group_topk_{args.use_error_feedback}", 
                 name=f"atomo_lr{args.lr}_bs{args.per_device_train_batch_size}_seed{args.seed}_{args.compressor}_{args.use_error_feedback}_wd{args.weight_decay}_r{args.r}_ratio{args.compress_ratio}"
             )
         else:
             wandb.init(
-                project=f"cifar10_resnet50_{args.compressor}_{args.use_error_feedback}", 
+                project=wandb_project or f"cifar10_resnet50_{args.compressor}_{args.use_error_feedback}", 
                 name=f"atomo_lr{args.lr}_bs{args.per_device_train_batch_size}_seed{args.seed}_{args.compressor}_{args.use_error_feedback}_wd{args.weight_decay}_ratio{args.compress_ratio}"
             )
     elif args.optimizer=="sgd":
         if args.compressor=="group_topk_no_reshape":
             wandb.init(
-                project=f"msgd_cifar10_resnet50_group_topk_{args.use_error_feedback}", 
+                project=wandb_project or f"msgd_cifar10_resnet50_group_topk_{args.use_error_feedback}", 
                 name=f"atomo_lr{args.lr}_bs{args.per_device_train_batch_size}_seed{args.seed}_{args.compressor}_{args.use_error_feedback}_wd{args.weight_decay}_r{args.r}_ratio{args.compress_ratio}"
             )
         else:
             wandb.init(
-                project=f"msgd_cifar10_resnet50_{args.compressor}_{args.use_error_feedback}", 
+                project=wandb_project or f"msgd_cifar10_resnet50_{args.compressor}_{args.use_error_feedback}", 
                 name=f"atomo_lr{args.lr}_bs{args.per_device_train_batch_size}_seed{args.seed}_{args.compressor}_{args.use_error_feedback}_wd{args.weight_decay}_ratio{args.compress_ratio}"
             )
     elif args.optimizer == "muon":
         wandb.init(
-            project=f"muon_cifar10_resnet50_{args.compressor}_{args.use_error_feedback}",
+            project=wandb_project or f"muon_cifar10_resnet50_{args.compressor}_{args.use_error_feedback}",
             name=f"muon_lr{args.lr}_mu{args.muon_mu}_seed{args.seed}_{args.compressor}_{args.use_error_feedback}_ratio{args.compress_ratio}",
         )
 
