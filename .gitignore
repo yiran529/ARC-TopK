@@ -13,3 +13,4 @@ wandb/
 .ipynb_checkpoints/
 output/
 /data/
+outputs/

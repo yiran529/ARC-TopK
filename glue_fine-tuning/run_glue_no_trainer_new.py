@@ -184,7 +184,14 @@ def parse_args():
     # parser.add_argument(
     #     "--num_warmup_steps", type=int, default=0, help="Number of steps for the warmup in the lr scheduler."
     # )
-    parser.add_argument("--output_dir", type=str, default=None, help="Where to store the final model.")
+    parser.add_argument(
+        "--output_dir", type=str, default=None, help="Where to store logs and evaluation results."
+    )
+    parser.add_argument(
+        "--save_final_model",
+        action="store_true",
+        help="Persist the final model and tokenizer in output_dir after training.",
+    )
     parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
     parser.add_argument(
         "--hub_model_id", type=str, help="The name of the repository to keep in sync with the local `output_dir`."
@@ -533,6 +540,40 @@ def main():
     # Afterwards we recalculate our number of training epochs
     args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
 
+    if args.compression_warmup_fraction is not None:
+        if not 0.0 <= args.compression_warmup_fraction <= 1.0:
+            raise ValueError("compression_warmup_fraction must be between 0 and 1")
+        reference_epochs = args.compression_warmup_reference_epochs
+        if reference_epochs is None:
+            reference_epochs = args.num_train_epochs
+        if reference_epochs <= 0:
+            raise ValueError("compression_warmup_reference_epochs must be positive")
+        optimizer_warmup_steps = math.ceil(
+            reference_epochs * num_update_steps_per_epoch * args.compression_warmup_fraction
+        )
+        # Communication hooks advance once per backward bucket (one local
+        # microbatch), while the requested warmup is expressed in optimizer
+        # steps. Map optimizer steps to the exact number of microbatches,
+        # including the final partial accumulation window of each epoch.
+        full_warmup_epochs, partial_warmup_steps = divmod(
+            optimizer_warmup_steps, num_update_steps_per_epoch
+        )
+        args.start_compress_iter = (
+            full_warmup_epochs * len(train_dataloader)
+            + partial_warmup_steps * args.gradient_accumulation_steps
+        )
+        logger.info(
+            "Compression warmup: %s hook iterations (%s optimizer steps, fraction=%s, "
+            "reference_epochs=%s, steps_per_epoch=%s, microbatches_per_epoch=%s, accumulation=%s)",
+            args.start_compress_iter,
+            optimizer_warmup_steps,
+            args.compression_warmup_fraction,
+            reference_epochs,
+            num_update_steps_per_epoch,
+            len(train_dataloader),
+            args.gradient_accumulation_steps,
+        )
+
     # Compressor
     process_group = dist.distributed_c10d._get_default_group()
     logger.info(f"args.compressor is {args.compressor}")
@@ -756,10 +797,7 @@ def main():
 
 
 
-    if args.with_tracking:
-        accelerator.end_training()
-
-    if args.output_dir is not None:
+    if args.output_dir is not None and args.save_final_model:
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(model)
         unwrapped_model.save_pretrained(
@@ -798,6 +836,12 @@ def main():
             with open(os.path.join(args.output_dir, "all_results.json"), "w") as f:
                 json.dump(all_results, f)
         accelerator.wait_for_everyone()
+
+    # Keep the distributed process group alive until all final barriers and
+    # result writes have completed.  Calling end_training() earlier tears
+    # down the group and makes the barriers above fail in multi-process runs.
+    if args.with_tracking:
+        accelerator.end_training()
 
 
 if __name__ == "__main__":

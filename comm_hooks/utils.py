@@ -230,6 +230,18 @@ def add_comm_hook_args(parser):
         default=10,
         help="Set the iteration to start compression.",
     )
+    parser.add_argument(
+        "--compression_warmup_fraction",
+        type=float,
+        default=None,
+        help="Set compression warmup as a fraction of a reference training run.",
+    )
+    parser.add_argument(
+        "--compression_warmup_reference_epochs",
+        type=int,
+        default=None,
+        help="Reference epoch count used with --compression_warmup_fraction.",
+    )
     parser.add_argument( 
         "--use_error_feedback",
         type=str,

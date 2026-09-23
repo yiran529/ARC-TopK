@@ -3,11 +3,11 @@
 set -euo pipefail
 
 # One invocation performs the complete workflow:
-#   1. Sweep three paired Muon learning rates on SST-2.
-#   2. Select the pair with the best mean dense/ARC-TopK validation accuracy.
-#   3. Reuse that pair for the formal eight-task, two-arm experiment.
+#   1. Sweep three paired Muon learning rates on SST-2 for five epochs.
+#   2. Select the pair with the best dense validation accuracy.
+#   3. Reuse that pair for the formal eight-task, two-arm experiment for ten epochs.
 #
-# Use DRY_RUN=1 to print six sweep commands and sixteen formal commands without
+# Use DRY_RUN=1 to print three sweep commands and sixteen formal commands without
 # launching training. Normal execution waits for the requested physical GPUs
 # to be below the configured memory/utilization threshold before starting.
 
@@ -31,19 +31,20 @@ SWEEP_TASK="${SWEEP_TASK:-sst2}"
 
 SWEEP_MATRIX_LRS=(0.02 0.002 0.0002)
 SWEEP_SCALAR_LRS=(0.001 0.0001 0.00005)
-SWEEP_ARMS=(muon_dense muon_arctopk)
 
 # SST-2 paper-global batch is 16 * 4 = 64. The sweep uses 8 * 4 * 2 = 64
-# to reduce peak memory while preserving the global batch.
+# to reduce peak memory while preserving the global batch. The sweep is a
+# short screening run; formal training retains the longer epoch count.
 SWEEP_TRAIN_BATCH_SIZE="${SWEEP_TRAIN_BATCH_SIZE:-8}"
 SWEEP_EVAL_BATCH_SIZE="${SWEEP_EVAL_BATCH_SIZE:-8}"
 SWEEP_GRADIENT_ACCUMULATION_STEPS="${SWEEP_GRADIENT_ACCUMULATION_STEPS:-2}"
-SWEEP_EPOCHS="${SWEEP_EPOCHS:-30}"
+SWEEP_EPOCHS="${SWEEP_EPOCHS:-5}"
 
 FORMAL_EVAL_BATCH_SIZE="${FORMAL_EVAL_BATCH_SIZE:-8}"
-FORMAL_EPOCHS="${FORMAL_EPOCHS:-30}"
+FORMAL_EPOCHS="${FORMAL_EPOCHS:-10}"
 FORMAL_BATCH_DIVISOR="${FORMAL_BATCH_DIVISOR:-1}"
 FORMAL_GRADIENT_ACCUMULATION_STEPS="${FORMAL_GRADIENT_ACCUMULATION_STEPS:-${FORMAL_BATCH_DIVISOR}}"
+COMPRESSION_WARMUP_FRACTION="${COMPRESSION_WARMUP_FRACTION:-0.1}"
 
 if ! [[ "${FORMAL_BATCH_DIVISOR}" =~ ^[1-9][0-9]*$ ]]; then
     printf 'FORMAL_BATCH_DIVISOR must be a positive integer\n' >&2
@@ -60,8 +61,11 @@ SELECTION_FILE="${SELECTION_FILE:-${SWEEP_OUTPUT_ROOT}/selected_config.json}"
 SWEEP_MANIFEST="${SWEEP_MANIFEST:-${SWEEP_OUTPUT_ROOT}/sweep_results.tsv}"
 
 DRY_RUN="${DRY_RUN:-0}"
-WITH_TRACKING="${WITH_TRACKING:-0}"
+SKIP_SWEEP="${SKIP_SWEEP:-0}"
+SWEEP_WITH_TRACKING="${SWEEP_WITH_TRACKING:-0}"
+FORMAL_WITH_TRACKING="${FORMAL_WITH_TRACKING:-1}"
 REPORT_TO="${REPORT_TO:-wandb}"
+WANDB_MODE="${WANDB_MODE:-online}"
 WAIT_FOR_GPUS="${WAIT_FOR_GPUS:-1}"
 GPU_IDLE_THRESHOLD_PERCENT="${GPU_IDLE_THRESHOLD_PERCENT:-20}"
 GPU_WAIT_INTERVAL_SECONDS="${GPU_WAIT_INTERVAL_SECONDS:-30}"
@@ -71,12 +75,6 @@ PYTHON_BIN="${PYTHON_BIN:-${REPO_DIR}/.venv/bin/python}"
 ACCELERATE_BIN="${ACCELERATE_BIN:-${REPO_DIR}/.venv/bin/accelerate}"
 
 TASKS=(cola sst2 mrpc stsb qqp mnli qnli rte)
-
-if [[ "${WITH_TRACKING}" == "1" ]]; then
-    TRACKING_ARGS=(--with_tracking --report_to "${REPORT_TO}")
-else
-    TRACKING_ARGS=()
-fi
 
 lr_tag() {
     printf '%s' "$1" | tr '.' 'p' | tr '-' 'm'
@@ -145,10 +143,15 @@ run_one() {
     local start_compress_iter="${10}"
     local num_epochs="${11}"
     local output_root="${12}"
+    local with_tracking="${13}"
     local run_dir="${output_root}/${task}/${run_name}"
+    local -a tracking_args=()
+    if [[ "${with_tracking}" == "1" ]]; then
+        tracking_args=(--with_tracking --report_to "${REPORT_TO}")
+    fi
 
     local -a command=(
-        env PYTHONPATH=.
+        env PYTHONPATH=. WANDB_MODE="${WANDB_MODE}"
         "${ACCELERATE_BIN}" launch
         --num_processes "${NUM_PROCESSES}"
         --num_machines 1
@@ -171,6 +174,8 @@ run_one() {
         --compressor "${compressor}"
         --use_error_feedback "${error_feedback}"
         --start_compress_iter "${start_compress_iter}"
+        --compression_warmup_fraction "${COMPRESSION_WARMUP_FRACTION}"
+        --compression_warmup_reference_epochs "${FORMAL_EPOCHS}"
         --compress_ratio 0.2
         --r 4
         --per_device_train_batch_size "${local_batch_size}"
@@ -180,7 +185,7 @@ run_one() {
         --lr_scheduler_type linear
         --seed "${SEED}"
         --output_dir "${run_dir}"
-        "${TRACKING_ARGS[@]}"
+        "${tracking_args[@]}"
     )
 
     printf '\n[%s/%s] matrix_lr=%s scalar_lr=%s train_bs=%s eval_bs=%s accum=%s\n' \
@@ -219,6 +224,18 @@ print(f"{value:.10f}")
 PY
 }
 
+prefetch_formal_datasets() {
+    printf '\nPrefetching GLUE datasets for the formal runs.\n'
+    "${PYTHON_BIN}" - "${TASKS[@]}" <<'PY'
+import sys
+from datasets import load_dataset
+
+for task in sys.argv[1:]:
+    dataset = load_dataset("glue", task)
+    print(f"cached {task}: train={len(dataset['train'])}", flush=True)
+PY
+}
+
 run_sweep() {
     mkdir -p "${SWEEP_OUTPUT_ROOT}"
     : > "${SWEEP_MANIFEST}"
@@ -227,21 +244,16 @@ run_sweep() {
         local matrix_lr="${SWEEP_MATRIX_LRS[$i]}"
         local scalar_lr="${SWEEP_SCALAR_LRS[$i]}"
         local tag="m$(lr_tag "${matrix_lr}")_s$(lr_tag "${scalar_lr}")"
-        local dense_score arc_score
+        local dense_score
 
         run_one "${SWEEP_TASK}" "sweep_${tag}_muon_dense" \
             "${matrix_lr}" "${scalar_lr}" "${SWEEP_TRAIN_BATCH_SIZE}" \
             "${SWEEP_EVAL_BATCH_SIZE}" "${SWEEP_GRADIENT_ACCUMULATION_STEPS}" \
-            none noef 1000 "${SWEEP_EPOCHS}" "${SWEEP_OUTPUT_ROOT}"
+            none noef 0 "${SWEEP_EPOCHS}" "${SWEEP_OUTPUT_ROOT}" \
+            "${SWEEP_WITH_TRACKING}"
         dense_score="$(read_accuracy "${SWEEP_OUTPUT_ROOT}/${SWEEP_TASK}/sweep_${tag}_muon_dense/all_results.json")"
 
-        run_one "${SWEEP_TASK}" "sweep_${tag}_muon_arctopk" \
-            "${matrix_lr}" "${scalar_lr}" "${SWEEP_TRAIN_BATCH_SIZE}" \
-            "${SWEEP_EVAL_BATCH_SIZE}" "${SWEEP_GRADIENT_ACCUMULATION_STEPS}" \
-            group_topk_no_reshape ef21 1000 "${SWEEP_EPOCHS}" "${SWEEP_OUTPUT_ROOT}"
-        arc_score="$(read_accuracy "${SWEEP_OUTPUT_ROOT}/${SWEEP_TASK}/sweep_${tag}_muon_arctopk/all_results.json")"
-
-        printf '%s\t%s\t%s\t%s\n' "${matrix_lr}" "${scalar_lr}" "${dense_score}" "${arc_score}" \
+        printf '%s\t%s\t%s\n' "${matrix_lr}" "${scalar_lr}" "${dense_score}" \
             | tee -a "${SWEEP_MANIFEST}"
     done
 }
@@ -255,20 +267,17 @@ manifest, selection_file, task = sys.argv[1:]
 rows = []
 with open(manifest, encoding="utf-8") as handle:
     for line in handle:
-        matrix_lr, scalar_lr, dense, arc = line.rstrip("\n").split("\t")
+        matrix_lr, scalar_lr, dense = line.rstrip("\n").split("\t")
         dense = float(dense)
-        arc = float(arc)
         rows.append({
             "matrix_lr": matrix_lr,
             "scalar_lr": scalar_lr,
             "dense_accuracy": dense,
-            "arctopk_accuracy": arc,
-            "mean_accuracy": (dense + arc) / 2.0,
         })
 if len(rows) != 3:
     raise SystemExit(f"expected three sweep rows, got {len(rows)}")
-best = max(rows, key=lambda row: (row["mean_accuracy"], row["arctopk_accuracy"], row["dense_accuracy"]))
-payload = {"task": task, "selection_metric": "mean_accuracy", "selected": best, "all": rows}
+best = max(rows, key=lambda row: row["dense_accuracy"])
+payload = {"task": task, "selection_metric": "dense_accuracy", "selected": best, "all": rows}
 with open(selection_file, "w", encoding="utf-8") as handle:
     json.dump(payload, handle, indent=2)
     handle.write("\n")
@@ -294,10 +303,12 @@ run_formal() {
 
         run_one "${task}" muon_dense "${matrix_lr}" "${scalar_lr}" \
             "${local_batch_size}" "${FORMAL_EVAL_BATCH_SIZE}" "${FORMAL_GRADIENT_ACCUMULATION_STEPS}" \
-            none noef 1000 "${FORMAL_EPOCHS}" "${FORMAL_OUTPUT_ROOT}"
+            none noef 0 "${FORMAL_EPOCHS}" "${FORMAL_OUTPUT_ROOT}" \
+            "${FORMAL_WITH_TRACKING}"
         run_one "${task}" muon_arctopk "${matrix_lr}" "${scalar_lr}" \
             "${local_batch_size}" "${FORMAL_EVAL_BATCH_SIZE}" "${FORMAL_GRADIENT_ACCUMULATION_STEPS}" \
-            group_topk_no_reshape ef21 1000 "${FORMAL_EPOCHS}" "${FORMAL_OUTPUT_ROOT}"
+            group_topk_no_reshape ef21 0 "${FORMAL_EPOCHS}" "${FORMAL_OUTPUT_ROOT}" \
+            "${FORMAL_WITH_TRACKING}"
     done
 }
 
@@ -310,11 +321,8 @@ if [[ "${DRY_RUN}" == "1" ]]; then
         run_one "${SWEEP_TASK}" "sweep_${tag}_muon_dense" \
             "${matrix_lr}" "${scalar_lr}" "${SWEEP_TRAIN_BATCH_SIZE}" \
             "${SWEEP_EVAL_BATCH_SIZE}" "${SWEEP_GRADIENT_ACCUMULATION_STEPS}" \
-            none noef 1000 "${SWEEP_EPOCHS}" "${SWEEP_OUTPUT_ROOT}"
-        run_one "${SWEEP_TASK}" "sweep_${tag}_muon_arctopk" \
-            "${matrix_lr}" "${scalar_lr}" "${SWEEP_TRAIN_BATCH_SIZE}" \
-            "${SWEEP_EVAL_BATCH_SIZE}" "${SWEEP_GRADIENT_ACCUMULATION_STEPS}" \
-            group_topk_no_reshape ef21 1000 "${SWEEP_EPOCHS}" "${SWEEP_OUTPUT_ROOT}"
+            none noef 0 "${SWEEP_EPOCHS}" "${SWEEP_OUTPUT_ROOT}" \
+            "${SWEEP_WITH_TRACKING}"
     done
     printf '[dry-run] formal commands use the pair selected at runtime; first pair is shown as placeholder.\n'
     run_formal "${SWEEP_MATRIX_LRS[0]}" "${SWEEP_SCALAR_LRS[0]}"
@@ -322,17 +330,26 @@ if [[ "${DRY_RUN}" == "1" ]]; then
 fi
 
 wait_for_gpus
-printf '\nStarting integrated SST-2 sweep.\n'
-run_sweep
+if [[ "${SKIP_SWEEP}" == "1" ]]; then
+    [[ -f "${SELECTION_FILE}" ]] || {
+        printf 'SKIP_SWEEP=1 requires an existing selection file: %s\n' "${SELECTION_FILE}" >&2
+        exit 2
+    }
+    printf '\nReusing completed sweep selection: %s\n' "${SELECTION_FILE}"
+else
+    printf '\nStarting integrated SST-2 sweep.\n'
+    run_sweep
 
-printf '\nSelecting the best LR pair from the completed sweep.\n'
-select_output="$(select_best_pair)"
-printf 'selected=%s\n' "${select_output}"
+    printf '\nSelecting the best LR pair from the completed sweep.\n'
+    select_output="$(select_best_pair)"
+    printf 'selected=%s\n' "${select_output}"
+fi
 selected_matrix_lr="$("${PYTHON_BIN}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["selected"]["matrix_lr"])' "${SELECTION_FILE}")"
 selected_scalar_lr="$("${PYTHON_BIN}" -c 'import json,sys; print(json.load(open(sys.argv[1]))["selected"]["scalar_lr"])' "${SELECTION_FILE}")"
 
 printf '\nStarting formal Table III runs with matrix_lr=%s scalar_lr=%s.\n' \
     "${selected_matrix_lr}" "${selected_scalar_lr}"
+prefetch_formal_datasets
 run_formal "${selected_matrix_lr}" "${selected_scalar_lr}"
 
 printf '\nIntegrated sweep and formal runs completed.\nSweep outputs: %s\nFormal outputs: %s\n' \
