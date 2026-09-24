@@ -76,6 +76,28 @@ ACCELERATE_BIN="${ACCELERATE_BIN:-${REPO_DIR}/.venv/bin/accelerate}"
 
 TASKS=(cola sst2 mrpc stsb qqp mnli qnli rte)
 
+# For a continuation run, optionally start the formal sequence at a later
+# task while preserving the canonical task order and all other settings.
+FORMAL_START_TASK="${FORMAL_START_TASK:-}"
+if [[ -n "${FORMAL_START_TASK}" ]]; then
+    formal_start_found=0
+    formal_tasks=()
+    for task in "${TASKS[@]}"; do
+        if [[ "${task}" == "${FORMAL_START_TASK}" ]]; then
+            formal_start_found=1
+        fi
+        if [[ "${formal_start_found}" == "1" ]]; then
+            formal_tasks+=("${task}")
+        fi
+    done
+    if [[ "${formal_start_found}" != "1" ]]; then
+        printf 'FORMAL_START_TASK=%s is not in the formal task list\n' \
+            "${FORMAL_START_TASK}" >&2
+        exit 2
+    fi
+    TASKS=("${formal_tasks[@]}")
+fi
+
 lr_tag() {
     printf '%s' "$1" | tr '.' 'p' | tr '-' 'm'
 }

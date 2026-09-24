@@ -39,3 +39,20 @@ Muon，而不是 Dense Muon 的通信等价实现。
   `-rerun1`，避免覆盖原始失败证据。
 - 新队列状态记录在 `output/CM003-CM005-arc-rerun/status.tsv`。继续使用后台
   GPU 低占用等待与无 gate 串行执行，单项失败不阻止另一项启动。
+
+## 2026-09-24：CM008 GLUE Table III 风格比较
+
+- 目的：在 RoBERTa-base 的 GLUE 八个任务上比较 Dense Muon 与 ARC-TopK + Muon；
+  seed 1240，每个完整 run 计划 10 epochs。
+- SST-2 Dense Muon 5-epoch validation sweep 在三组学习率中选出 matrix LR
+  `0.0002`、scalar LR `0.00005`，并用于正式任务。正式设置包含 Muon momentum
+  `0.95`、spectral-norm scaling；ARC 使用 `group_topk_no_reshape`、EF21、
+  `compress_ratio=0.2`、`r=4`、start step 0、compression warmup fraction `0.1`。
+- 结果目录：`outputs/glue_muon_table3_formal_seed1240_dense5_formal10_retry3/`；
+  汇总见 `docs/results.md` 的 CM008 部分。15/16 runs 完成；SST-2 ARC-TopK 在
+  epoch 8 验证后、epoch 9 训练期间被外部中止，保留为部分结果。
+- 批大小口径：CoLA/MRPC 日志记录 effective global batch 128；SST-2、STS-B、QQP
+  为 64；MNLI、QNLI、RTE 按后续修正使用 GA=1、每卡 batch 16，effective global
+  batch 64。结果为单 seed，且学习率由 SST-2 validation 指标选择。
+- 观察：在完整结果中 ARC-TopK + Muon 于 MRPC 两项指标较高、QNLI accuracy 相同，
+  其余任务低于 Dense Muon；SST-2 ARC 结果不作为同预算结论。模型 checkpoint 未保存。
