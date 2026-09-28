@@ -63,18 +63,24 @@ CM003 和 CM005 的首次启动因 `torchrun` 参数解析问题失败，修复�
 | CM007 | ResNet-50 | Dense Adam（脚本选项 `adamw`，实际调用 `torch.optim.Adam`） | 200 epochs |
 | CM007 | ResNet-50 | Dense Muon | 200 epochs |
 | CM007 | ResNet-50 | ARC-TopK + EF14 + Muon | 200 epochs |
+| CM008-CIFAR | ResNet-18 | Top-K / Rand-K + EF14 + Muon | 各 200 epochs |
+| CM008-CIFAR | ResNet-50 | Top-K / Rand-K + EF14 + Muon | 各 200 epochs |
+
+新增运行的目录名为 `CM008-table2-randk-topk-muon-gpu0-1-2-7`；原有 GLUE 实验也使用 `CM008` 编号。这里以“CM008-CIFAR”区分两组已有运行，编号冲突待统一。
 
 ## 2. 核心设置
 
 - 数据集：CIFAR-10；训练集用于训练，`train=False` 的官方 10,000 张 test set 用于评估。
-- 硬件：4 张 NVIDIA RTX 4090（GPU 2–5）。
-- 共同设置：per-device batch size `16`、weight decay `5e-4`、seed `1410`、学习率 warmup 为总 epoch 数的 10%、ARC 压缩起始迭代 `1000`、`compress_ratio=0.2`、投影 rank `4`。
+- 硬件：每次运行使用 4 张 NVIDIA RTX 4090；CM006/CM007 的启动脚本指定 GPU 2–5。新增运行目录标识为 GPU 0、1、2、7。
+- 共同设置：per-device batch size `16`、weight decay `5e-4`、seed `1410`、学习率 warmup 为总 epoch 数的 10%、压缩起始 hook 迭代 `1000`、`compress_ratio=0.2`。ARC-TopK 另使用投影 rank `4`。
 - Dense Adam：LR `1e-3`。
 - Muon：matrix LR `0.02`、momentum `0.95`、scalar LR `1e-3`、spectral-norm scaling。
 - ARC-TopK + Muon：在上述 Muon 设置上使用 `group_topk_no_reshape` 和 `ef14`。
+- 新增 Top-K/Rand-K + Muon：使用 `topk_sync` / `randk_sync`、`ef14` 和 tensor 级稀疏化；其余 Muon、batch、seed、训练轮数及压缩起始迭代与上表相同。四个运行启用 `--disable_compression_warmup`，从第 1,000 次 hook 迭代开始直接使用目标压缩比例；ARC hook 同样没有渐进压缩阶段。新增运行参数以各自本地 W&B `wandb-metadata.json` 的 `args` 字段为准，结果以训练日志为准。
 - 运行脚本：
   - [cm001_table2_r18_pilot.sh](../cifar10/scripts/cm001_table2_r18_pilot.sh)
   - [cm007_table2_r50_gpu2_5.sh](../cifar10/scripts/cm007_table2_r50_gpu2_5.sh)
+  - CM008-CIFAR 的独立启动脚本未在仓库中找到；四个实际运行的命令行参数保存在本地 W&B 元数据中。
 
 ## 3. 结果
 
@@ -88,12 +94,18 @@ CM003 和 CM005 的首次启动因 `torchrun` 参数解析问题失败，修复�
 | CM007 | ResNet-50 Dense Adam | 93.800% | 198 | 93.590% | test | [log](../output/CM007-table2-r50-gpu2-5/01-dense-adam.log) |
 | CM007 | ResNet-50 Dense Muon | 96.180% | 196 | 96.060% | test | [log](../output/CM007-table2-r50-gpu2-5/02-dense-muon.log) |
 | CM007 | ResNet-50 ARC-TopK + EF14 + Muon | 95.880% | 188 | 95.790% | test | [log](../output/CM007-table2-r50-gpu2-5/03-arctopk-ef14-muon.log) |
+| CM008-CIFAR | ResNet-18 Top-K + EF14 + Muon | 95.170% | 175 | 95.100% | test | [log](../output/CM008-table2-randk-topk-muon-gpu0-1-2-7/01-resnet18-topk-ef14-muon.log) |
+| CM008-CIFAR | ResNet-18 Rand-K + EF14 + Muon | 95.130% | 180 | 95.070% | test | [log](../output/CM008-table2-randk-topk-muon-gpu0-1-2-7/02-resnet18-randk-ef14-muon.log) |
+| CM008-CIFAR | ResNet-50 Top-K + EF14 + Muon | 95.590% | 199 | 95.550% | test | [log](../output/CM008-table2-randk-topk-muon-gpu0-1-2-7/03-resnet50-topk-ef14-muon.log) |
+| CM008-CIFAR | ResNet-50 Rand-K + EF14 + Muon | 95.670% | 193 | 95.620% | test | [log](../output/CM008-table2-randk-topk-muon-gpu0-1-2-7/04-resnet50-randk-ef14-muon.log) |
 
 ## 4. 结论
 
 - 在 ResNet-18 上，ARC-TopK + EF14 + Muon 比 Dense Muon 低 `0.080` 个百分点，比 Dense Adam 高 `1.490` 个百分点。
 - 在 ResNet-50 上，ARC-TopK + EF14 + Muon 比 Dense Muon 低 `0.300` 个百分点，比 Dense Adam 高 `2.080` 个百分点。
+- 新增 Top-K/Rand-K 两组在 ResNet-18 的 best test accuracy 分别为 `95.170%` / `95.130%`，在 ResNet-50 分别为 `95.590%` / `95.670%`。ResNet-50 两组均低于 Dense Muon 的 `96.180%`；不同压缩器的结果仅作为单 seed 描述性比较。
 - 所有 CIFAR-10 结果均为单 seed（`n=1`），属于初步比较；当前未报告多 seed 离散度。
+- “Best” 是同一 test set 上 200 次评估中的峰值，可能高估独立测试表现；最后一轮数值更适合作为固定训练预算的对照。
 
 # GLUE Table III 风格的 Muon 实验结果
 
