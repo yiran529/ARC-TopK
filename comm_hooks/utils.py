@@ -178,6 +178,7 @@ def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None)
             random=random,
             start_compress_iter=args.start_compress_iter,
             random_seed=args.seed,
+            gradual_compression=not args.disable_compression_warmup,
         )
         model.register_comm_hook(hook_state, sparse_hook_sync)
   
@@ -262,6 +263,11 @@ def add_comm_hook_args(parser):
         type=float,
         default=0.08,
         help="Set the ratio of the top-k elements to keep.",
+    )
+    parser.add_argument(
+        "--disable_compression_warmup",
+        action="store_true",
+        help="Use the target sparse ratio immediately when compression starts.",
     )
     
     parser.add_argument(

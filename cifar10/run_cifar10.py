@@ -117,7 +117,7 @@ if args.rank == 0 and args.use_wandb:
             )
     elif args.optimizer == "muon":
         wandb.init(
-            project=f"muon_cifar10_resnet18_{args.compressor}_{args.use_error_feedback}",
+            project=os.environ.get("WANDB_PROJECT") or "muon_cifar10_resnet18",
             name=f"muon_lr{args.lr}_mu{args.muon_mu}_seed{args.seed}_{args.compressor}_{args.use_error_feedback}_ratio{args.compress_ratio}",
         )
 
