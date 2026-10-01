@@ -1,5 +1,20 @@
 # M001：可切换的 Muon 基线
 
+## 2026-10-01：CM014，130M matrix LR 0.01 对照
+
+- 用户要求与 ARC-TopK + Muon 先后串行比较。CM014 在 CM004 的 130M Dense Muon
+  配置基础上仅将 matrix LR 从 `0.02` 改为 `0.01`；保留 seed 1243、16,785
+  update、全局 batch 512、FP32、scalar LR 0.001 等设置。
+- 新 C4 路径为 `/home/wyr/greedy_lore/c4/c4_en/en`，串行脚本引用前 30 个训练
+  分片及全部 8 个验证分片，以匹配旧运行的数据范围；原数据文件已不可用，无法
+  逐文件核验内容一致性。
+- 实验编号：`CM014-m001-dense-muon-llama130m-c4-2p2b-ws4-s1243-lr001`。
+  脚本：`c4/scripts/run_cm014_cm015_muon_130m_lr001_c4.sh`，状态记录在
+  `output/CM014-CM015-muon-llama130m-c4-lr001-serial/status.tsv`。
+- 用户在开始训练前将 CM014 和 CM015 的训练步数统一改为 20,000；CM014 的
+  最终运行编号改为 `CM014-m001-dense-muon-llama130m-c4-2p62b-ws4-s1243-lr001`。
+  W&B project 为 `ARC-TopK-LLaMA-130M`，`WANDB_MODE=online`。
+
 ## 2026-09-21：Muon 优化器与 DDP 正交化调度
 
 ### 目的与假设
@@ -117,3 +132,15 @@ checkpoint，只有显式设置 `--save_every > 0` 时才启用周期保存。
 - 二者与 M002 的 60M/130M ARC-TopK + Muon 实验由
   `c4/scripts/run_cm002_cm005_serial.sh` 串行编排；不使用结果 gate，单项失败后
   仍继续下一项。控制脚本等待 4 张低占用 GPU 后启动，允许与已有进程共享。
+
+## 2026-10-02：CM014 最终结果核验
+
+- 目的与配置：记录 130M Dense Muon 的 matrix LR `0.01`、20,000 update 对照，
+  seed 1243；运行编号 `CM014-m001-dense-muon-llama130m-c4-2p62b-ws4-s1243-lr001`。
+- 来源：同名 `output/` 目录的 `all_results.json`、`train.log`，以及
+  `output/CM014-CM015-muon-llama130m-c4-lr001-serial/status.tsv`。
+  训练日志达到 20,000 步并标记成功，状态退出码 0，完成于 2026-10-01 19:01（北京时间）。
+- validation final loss `3.0769667814366852`，PPL `21.692504398180365`，
+  有效预测 token `10008907`。实际 GPU 0–3、4 张 RTX 4090；未保存 checkpoint。
+- 结果及对照汇总见 [results](../results.md)。相对旧 CM004 同时改变了 LR、训练预算
+  和数据路径，不能据此做单因素归因；仍为单 seed 初步结果。下一步核验同预算压缩对照。

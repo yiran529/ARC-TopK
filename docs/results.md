@@ -1,53 +1,77 @@
 # C4 LLaMA 预训练结果
 
+记录更新：2026-10-02（北京时间）。数值为本仓库实际运行结果，论文结果不纳入此表。
+
 ## 1. 实验矩阵
 
-使用 C4 英文数据，比较 Dense Muon、Dense AdamW 和 ARC-TopK + Muon。所有实验
-使用 seed 1243，4 张 RTX 4090。
+使用 C4 英文数据，比较 Dense Muon、Dense AdamW 和压缩梯度后的 Muon。
+所有已完成实验使用 seed 1243，4 张 RTX 4090；有损压缩后再正交化属于近似 Muon。
 
-| 实验 | 模型 | 优化器/通信 | 更新步数 |
-| --- | --- | --- | ---: |
-| CM001 | LLaMA 60M | Dense Muon | 8,393 |
-| CM002 | LLaMA 60M | Dense AdamW | 8,393 |
-| CM003-rerun1 | LLaMA 60M | ARC-TopK + Muon | 8,393 |
-| CM004 | LLaMA 130M | Dense Muon | 16,785 |
-| CM005-rerun1 | LLaMA 130M | ARC-TopK + Muon | 16,785 |
+| 实验 | 模型 | 优化器/通信 | 训练预算（updates） | 状态 |
+| --- | --- | --- | ---: | --- |
+| CM001 | LLaMA 60M | Dense Muon，matrix LR 0.02 | 8,393 | 完成 |
+| CM002 | LLaMA 60M | Dense AdamW | 8,393 | 完成 |
+| CM003-rerun1 | LLaMA 60M | ARC-TopK + Muon，matrix LR 0.02 | 8,393 | 完成 |
+| CM004 | LLaMA 130M | Dense Muon，matrix LR 0.02 | 16,785 | 完成 |
+| CM005-rerun1 | LLaMA 130M | ARC-TopK + Muon，matrix LR 0.02 | 16,785 | 完成 |
+| CM014 | LLaMA 130M | Dense Muon，matrix LR 0.01 | 20,000 | 完成 |
+| CM015 | LLaMA 130M | ARC-TopK + Muon，matrix LR 0.01 | 20,000 | 完成 |
+| CM016 | LLaMA 60M | Top-K + EF14 + Muon，matrix LR 0.02 | 8,393 | 训练已启动，未完成 |
+| CM017 | LLaMA 60M | Rand-K + EF14 + Muon，matrix LR 0.02 | 8,393 | 尚未启动 |
+| CM018 | LLaMA 130M | Top-K + EF14 + Muon，matrix LR 0.01 | 20,000 | 尚未启动 |
+| CM019 | LLaMA 130M | Rand-K + EF14 + Muon，matrix LR 0.01 | 20,000 | 尚未启动 |
 
-CM003 和 CM005 的首次启动因 `torchrun` 参数解析问题失败，修复后重跑成功。
+CM003/CM005 首次启动因 `torchrun` 参数解析问题失败，修复后重跑成功。
+CM013 以及原 16,785 步的 CM014/CM015 队列均在训练前取消并被替代，不计为完成结果。
+CM014/CM015 状态文件记录两组 `exit_code=0`；CM016–CM019 状态为本次核验快照。
 
 ## 2. 核心设置
 
-- 数据集：C4 英文数据，本地分片目录为 `/dev/shm/wyr_tmp/c4/en-30-shards`。
-- 序列长度：256；全局 batch size：512；训练 dtype：FP32；weight decay：0；
-  gradient clipping：1.0；cosine schedule；warmup 1,000 步。
-- 60M：microbatch 32、gradient accumulation 4。
-- 130M：microbatch 16、gradient accumulation 8。
-- Muon：matrix LR `0.02`、scalar AdamW LR `0.001`、momentum `0.95`、
-  spectral-norm scaling。
-- AdamW：LR `0.002`，betas `(0.9, 0.999)`。
-- ARC-TopK：`compress_ratio=0.2`、`r=4`、`ef14`；完成前 1,000 个 update 后开始压缩。
-- 运行脚本：
-  - `c4/scripts/run_cm001_muon_60m_c4.sh`
-  - `c4/scripts/run_cm002_cm005_serial.sh`
+- 数据集：C4 英文；旧实验使用 `/dev/shm/wyr_tmp/c4/en-30-shards`。
+  CM014–CM019 从 `/home/wyr/greedy_lore/c4/c4_en/en` 引用前 30 个训练分片及全部
+  8 个验证分片。旧文件已不可用，只能确认分片编号范围一致，无法核验文件内容相同。
+- 序列长度 256；global batch 512；FP32；weight decay 0；gradient clipping 1.0；
+  cosine schedule，warmup 1,000 步。60M 每卡 batch 32、GA 4；130M 每卡 batch 16、GA 8。
+- Muon：momentum `0.95`、spectral-norm scaling、scalar AdamW LR `0.001`；matrix LR
+  如矩阵所示。Dense AdamW：LR `0.002`，betas `(0.9, 0.999)`。
+- ARC-TopK：`compress_ratio=0.2`、`r=4`、EF14，从梯度同步迭代 1,000 开始压缩。
+  Top-K/Rand-K：tensor 级、比例 `0.2`、EF14，同样从迭代 1,000 开始；
+  `--disable_compression_warmup` 关闭渐进压缩。
+- CM014/CM015 实际使用 GPU 0–3。最终评估为 validation 上约 10M 有效预测 token，
+  loss 按有效预测 token 加权，PPL 使用入口保存的 `exp(loss)`；未保存模型 checkpoint。
+- 运行脚本：[CM001](../c4/scripts/run_cm001_muon_60m_c4.sh)、
+  [CM002–CM005](../c4/scripts/run_cm002_cm005_serial.sh)、
+  [CM014–CM015](../c4/scripts/run_cm014_cm015_muon_130m_lr001_c4.sh)、
+  [CM016–CM019](../c4/scripts/run_cm016_cm019_sparse_muon_c4.sh)。
 
 ## 3. 最终验证结果
 
-| 实验 | Eval loss | PPL |
-| --- | ---: | ---: |
-| CM001 60M Dense Muon | 3.419215 | 30.545439 |
-| CM002 60M Dense AdamW | 3.401769 | 30.017143 |
-| CM003-rerun1 60M ARC+Muon | 3.424462 | 30.706118 |
-| CM004 130M Dense Muon | 3.144573 | 23.209753 |
-| CM005-rerun1 130M ARC+Muon | 3.427855 | 30.810485 |
+来源为各运行的 `all_results.json`，原始键为 `final_eval_loss` 和
+`final_eval_perplexity`；均为 validation、final。最终步数与完成状态由同目录训练日志
+的 `Reached max number of update steps`、`Script finished successfully` 和队列状态核对。
+CM016–CM019 尚无最终结果，不将训练中的最后一条 loss 当作 final。
 
-结论：
+| 实验 | 方法 | Eval loss | PPL | final update | 结果来源 |
+| --- | --- | ---: | ---: | ---: | --- |
+| CM001 | 60M Dense Muon | 3.419215 | 30.545439 | 8,393 | [JSON](../output/CM001-muon-dense-llama60m-c4-1p1b-ws4-s1243/all_results.json) |
+| CM002 | 60M Dense AdamW | 3.401769 | 30.017143 | 8,393 | [JSON](../output/CM002-dense-adam-llama60m-c4-1p1b-ws4-s1243/all_results.json) |
+| CM003-rerun1 | 60M ARC+Muon | 3.424462 | 30.706118 | 8,393 | [JSON](../output/CM003-m002-arctopk-muon-llama60m-c4-1p1b-ws4-s1243-rerun1/all_results.json) |
+| CM004 | 130M Dense Muon | 3.144573 | 23.209753 | 16,785 | [JSON](../output/CM004-m001-dense-muon-llama130m-c4-2p2b-ws4-s1243/all_results.json) |
+| CM005-rerun1 | 130M ARC+Muon | 3.427855 | 30.810485 | 16,785 | [JSON](../output/CM005-m002-arctopk-muon-llama130m-c4-2p2b-ws4-s1243-rerun1/all_results.json) |
+| CM014 | 130M Dense Muon，LR 0.01 | 3.076967 | 21.692504 | 20,000 | [JSON](../output/CM014-m001-dense-muon-llama130m-c4-2p62b-ws4-s1243-lr001/all_results.json) |
+| CM015 | 130M ARC+Muon，LR 0.01 | 3.088616 | 21.946693 | 20,000 | [JSON](../output/CM015-m002-arctopk-muon-llama130m-c4-2p62b-ws4-s1243-lr001/all_results.json) |
 
-- 60M ARC+Muon 与 Dense Muon 接近，PPL 高 `0.160679`（约 `0.53%`）。
-- 130M ARC+Muon 明显落后于 Dense Muon，PPL 高 `7.600732`（约 `32.75%`）。
-- 当前 ARC 配置在 60M 上基本可用，但不能直接扩展到 130M；130M 需要进一步调节
-  压缩比例、投影 rank 或压缩起始步数。
+## 4. 结论
 
-以上结果均为单 seed，属于初步比较。
+- 60M、LR 0.02、8,393 步：ARC+Muon 相对 Dense Muon 的 PPL 高 `0.160679`
+  （约 `0.53%`）。
+- 130M、LR 0.02、16,785 步：ARC+Muon 的 PPL 高 `7.600732`（约 `32.75%`）。
+- 新增 130M、LR 0.01、20,000 步对照：ARC+Muon 的 loss 高 `0.011650`，
+  PPL 高 `0.254189`（约 `1.17%`），在本次配置下与 Dense Muon 接近。
+- 新旧 130M 实验同时改变 matrix LR 和训练预算，且数据文件内容无法跨目录核验；
+  不能把改善单独归因于 LR，也不能据此断言所有 130M ARC 配置均能保持质量。
+- 均为单 seed（`n=1`）的初步结果。下一步核验 CM016–CM019 完成结果，再做同预算
+  的压缩器比较；要分离 LR 与训练预算影响，需要保持其他条件一致的独立对照。
 
 # CIFAR-10 ResNet-18/50 实验结果
 
@@ -156,3 +180,68 @@ CM003 和 CM005 的首次启动因 `torchrun` 参数解析问题失败，修复�
 - 这里微调的结果比论文中的adam实验差可能是因为：
   - 用muon微调adam预训练的模型效果会比较差
   - 没有仔细sweep lr等超参数
+
+# GLUE Top-K / Rand-K + Muon 新增结果
+
+## 1. 实验矩阵
+
+2026-10-02 核验：以下 16 个 RoBERTa-base runs 均完成 10 epochs。
+每个任务分别使用 Top-K + EF21 + Muon 和 Rand-K + EF21 + Muon；seed 1240。
+
+| 运行组 | 任务 | 每种方法训练预算 | 结果状态 |
+| --- | --- | --- | --- |
+| 原 Top-K/Rand-K 组（目录无 CM 前缀） | CoLA、SST-2、MRPC、STS-B | 10 epochs | 8/8 完成 |
+| CM009 | QQP | 10 epochs | 2/2 完成 |
+| CM012 | MNLI、QNLI、RTE | 10 epochs | 6/6 完成 |
+
+失败与中断记录：原 QQP Top-K 在 GA=2 时被停止；CM009、CM011 的 MNLI Top-K
+日志均有 CUDA OOM。CM010 使用了随后被用户否决的 GPU 组合并被停止，CM011
+MNLI Rand-K 随主机重启中断。以上无完整结果的目录不计入下表；CM012 从头重跑
+MNLI/QNLI/RTE，编号中的 `resume` 不表示从 checkpoint 续训。
+
+## 2. 核心设置
+
+- 数据与模型：`FacebookAI/roberta-base`、GLUE，max length 512，FP32；线性 LR
+  调度、LR warmup fraction 0、weight decay 0。学习率沿用此前 SST-2 Dense Muon
+  5-epoch sweep 的选中配置：matrix LR `0.0002`、scalar LR `0.00005`，不属于独立确认调参。
+- Muon momentum `0.95`、spectral-norm scaling；压缩器 `topk_sync` / `randk_sync`、
+  tensor 级、比例 `0.2`、EF21。配置 `start_compress_iter=0`，但入口按
+  `compression_warmup_fraction=0.1` 和 10 epochs 计算初始 dense 阶段；实际日志显示
+  该阶段后才开始压缩。`--disable_compression_warmup` 只关闭后续渐进压缩，
+  不表示从第一步开始压缩。
+- CoLA/MRPC 每卡 batch 16、GA 2、global batch 128；SST-2/STS-B 每卡 batch 8、
+  GA 2、global batch 64；QQP/MNLI/QNLI/RTE 每卡 batch 16、GA 1、global batch 64。
+- 每次运行使用 4 张 RTX 4090；原组/CM009 使用 GPU 0、1、2、7，CM012 使用 GPU 0–3。
+  硬件型号由本地 W&B 元数据核对，使用卡数由启动参数及训练日志核对；元数据列出的
+  主机总 GPU 数不作为本次使用卡数。未保存模型 checkpoint。
+- 运行脚本：[glue_muon_table3_randk_topk.sh](../glue_fine-tuning/scripts/glue_muon_table3_randk_topk.sh)。
+  已完成原组的实际参数以各运行本地 W&B 元数据 `args` 及 `train.log` 为准，
+  当前脚本默认仅覆盖后续 QQP/MNLI/QNLI/RTE。
+
+## 3. 最终验证结果
+
+下表为百分制分数，来源均为链接对应的 `all_results.json`，使用 `eval_*` 原始键。
+全部为 final：epoch 9（第 10 个 epoch）；MNLI 使用训练后的 `validation_mismatched`
+评估，其他任务使用 `validation`。已核对 JSON 与日志最后完整评估一致且达到目标更新步数。
+
+| 数据集 | 指标（原始键去掉 `eval_`） | Top-K + Muon | Rand-K + Muon | split | final update |
+| --- | --- | ---: | ---: | --- | ---: |
+| CoLA | matthews_correlation | [57.320](../outputs/glue_muon_table3_randk_topk_seed1240-formal10-gpu0127/cola/muon_topk/all_results.json) | [55.804](../outputs/glue_muon_table3_randk_topk_seed1240-formal10-gpu0127/cola/muon_randk/all_results.json) | validation | 670 |
+| SST-2 | accuracy | [94.610](../outputs/glue_muon_table3_randk_topk_seed1240-formal10-gpu0127/sst2/muon_topk/all_results.json) | [94.839](../outputs/glue_muon_table3_randk_topk_seed1240-formal10-gpu0127/sst2/muon_randk/all_results.json) | validation | 10,530 |
+| MRPC | accuracy / f1 | [85.539 / 89.667](../outputs/glue_muon_table3_randk_topk_seed1240-formal10-gpu0127/mrpc/muon_topk/all_results.json) | [81.373 / 87.459](../outputs/glue_muon_table3_randk_topk_seed1240-formal10-gpu0127/mrpc/muon_randk/all_results.json) | validation | 290 |
+| STS-B | pearson / spearmanr | [89.840 / 89.701](../outputs/glue_muon_table3_randk_topk_seed1240-formal10-gpu0127/stsb/muon_topk/all_results.json) | [88.926 / 88.785](../outputs/glue_muon_table3_randk_topk_seed1240-formal10-gpu0127/stsb/muon_randk/all_results.json) | validation | 900 |
+| QQP | accuracy / f1 | [91.890 / 89.076](../outputs/CM009-m003-glue-topk-randk-ga1-seed1240-gpu0127/qqp/muon_topk/all_results.json) | [91.870 / 89.139](../outputs/CM009-m003-glue-topk-randk-ga1-seed1240-gpu0127/qqp/muon_randk/all_results.json) | validation | 56,860 |
+| MNLI | accuracy | [86.656](../outputs/CM012-m003-glue-ga1-gpu0123-resume/mnli/muon_topk/all_results.json) | [86.758](../outputs/CM012-m003-glue-ga1-gpu0123-resume/mnli/muon_randk/all_results.json) | validation_mismatched | 61,360 |
+| QNLI | accuracy | [92.623](../outputs/CM012-m003-glue-ga1-gpu0123-resume/qnli/muon_topk/all_results.json) | [92.385](../outputs/CM012-m003-glue-ga1-gpu0123-resume/qnli/muon_randk/all_results.json) | validation | 16,370 |
+| RTE | accuracy | [67.870](../outputs/CM012-m003-glue-ga1-gpu0123-resume/rte/muon_topk/all_results.json) | [66.426](../outputs/CM012-m003-glue-ga1-gpu0123-resume/rte/muon_randk/all_results.json) | validation | 390 |
+
+## 4. 结论
+
+- 同任务 Top-K 与 Rand-K 的预算及配置匹配，仅作单 seed（`n=1`）描述性比较。
+  Top-K 在 CoLA、MRPC、STS-B、QNLI、RTE 的报告指标较高；Rand-K 在 SST-2、MNLI
+  accuracy 较高；QQP 的 accuracy 与 F1 排序不同，未呈现一种方法全面占优。
+- 可与上文 Dense/ARC 的同任务 final validation 指标对照，但 QQP 新组使用 GA=1，
+  旧组使用 GA=2；SST-2 ARC 只完成 epoch 8，不能纳入同预算 final 比较。
+  各任务 global batch 也不完全相同，不计算跨任务总平均作为统一排名。
+- 学习率由 SST-2 validation 选出；当前没有多 seed 离散度，无法据此判断差异是否稳定。
+  下一步优先补全 SST-2 ARC，并在统一 batch/GA 的条件下重复比较。
