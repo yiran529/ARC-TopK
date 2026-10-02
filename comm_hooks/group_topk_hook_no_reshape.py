@@ -8,7 +8,13 @@ import torch.distributed as dist
 
 import comm_hooks.default_hooks as default_hooks
 
-from comm_hooks.utils import HookState, _get_allgather_out_list, dtype_bits, tensor_bits
+from comm_hooks.utils import (
+    HookState,
+    _get_allgather_out_list,
+    dtype_bits,
+    synchronize_blocking_communication,
+    tensor_bits,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +242,7 @@ def group_topk_hook(
             state.global_error_dict[bucket_index] = torch.clone(input_tensor).detach()
             # reset the full input tensor
             state.maybe_increase_iter(bucket)
+            synchronize_blocking_communication(state, input_tensor)
             fut: torch.futures.Future[torch.Tensor] = torch.futures.Future()
             fut.set_result(input_tensor)
             return fut
@@ -277,10 +284,9 @@ def group_topk_hook(
         input_tensor.copy_(state.global_error_dict[bucket_index])
 
     state.maybe_increase_iter(bucket)
+    synchronize_blocking_communication(state, input_tensor)
 
     fut: torch.futures.Future[torch.Tensor] = torch.futures.Future()
     fut.set_result(input_tensor)
 
     return fut
-
-

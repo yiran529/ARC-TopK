@@ -58,6 +58,7 @@ def parse_args():
     parser.add_argument("--measured_iterations", type=int, default=50)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--ddp_bucket_cap_mb", type=float, default=None)
+    parser.add_argument("--blocking_communication", action="store_true")
     parser.add_argument("--seed", type=int, default=1243)
     parser.add_argument("--optimizer", choices=("muon", "adamw"), default="muon")
     parser.add_argument("--lr", type=float, default=0.01)
@@ -189,6 +190,7 @@ def main():
             Path(args.model_config),
             Path("optimizers/muon.py"),
             Path("optimizers/utils.py"),
+            Path("comm_hooks/default_hooks.py"),
             Path("comm_hooks/utils.py"),
             Path("comm_hooks/sparse_hook_c4.py"),
             Path("comm_hooks/group_topk_hook_no_reshape.py"),

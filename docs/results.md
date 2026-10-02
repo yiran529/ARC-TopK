@@ -260,3 +260,94 @@ MNLI/QNLI/RTE，编号中的 `resume` 不表示从 checkpoint 续训。
   各任务 global batch 也不完全相同，不计算跨任务总平均作为统一排名。
 - 学习率由 SST-2 validation 选出；当前没有多 seed 离散度，无法据此判断差异是否稳定。
   下一步优先补全 SST-2 ARC，并在统一 batch/GA 的条件下重复比较。
+
+# C4 Table V 风格的 Muon 通信压力测速
+
+## 1. 实验矩阵
+
+CM058–CM105 与 CM106–CM121 比较 Dense、Top-K、Rand-K 和 ARC-TopK 四种梯度
+通信方法。两组共 64 个 cell 均达到 100 步 warmup 后的 50 步计时窗口并以退出码 0
+完成。主指标是各 rank 连续 50 个完整训练 update 的 wall time 中，最慢 rank 的总时间
+除以 50；下表单位均为 ms/update。
+
+| 实验编号 | 模型 | dtype / seq | cell 数 | 状态 | canonical source |
+| --- | --- | --- | ---: | --- | --- |
+| CM058–CM105 | 60M、130M、350M | FP32 / 256 | 48 | 48/48 完成 | [summary](../output/CM058-CM105-table-v-muon-blocking-matrix/summary.csv) / [comparisons](../output/CM058-CM105-table-v-muon-blocking-matrix/comparisons.json) |
+| CM106–CM121 | 1B（实际 1,339,082,752 参数） | BF16 / 64 | 16 | 16/16 完成 | [summary](../output/CM106-CM121-table-v-muon-1b-bf16-blocking-matrix/summary.csv) / [comparisons](../output/CM106-CM121-table-v-muon-1b-bf16-blocking-matrix/comparisons.json) |
+
+## 2. 核心设置
+
+- 数据与训练：本地 C4，每卡 batch 1、GA1、seed 1243；Muon matrix LR 0.01、
+  scalar LR 0.001、momentum 0.95、spectral-norm scaling，两条路径 weight decay 0。
+- 压缩：梯度 DDP hook 上的 tensor 级稀疏化，保留比例 0.2；ARC-TopK 使用 rank 4
+  和 EF14。压缩臂前 100 步走 Dense，从第 101 步起直接使用目标比例；关闭渐进压缩。
+- 硬件：单机 RTX 4090；禁用 NCCL P2P，并限制为单 NCCL channel/CTA。
+- 四种 setting：
+
+| setting | GPU | DDP bucket | hook blocking | NCCL transport |
+| --- | ---: | ---: | --- | --- |
+| A | 4 | 1024 MiB | 否 | SHM |
+| B | 4 | PyTorch 默认 | 是 | SHM |
+| C | 8 | PyTorch 默认 | 是 | SHM |
+| D | 8 | PyTorch 默认 | 是 | Socket/loopback，禁用 SHM |
+
+严格阻塞表示每个 DDP hook 的同步 collective 后、返回已完成 Future 前执行设备同步，
+从而不允许该梯度通信与后续 backward 重叠。Socket setting 是人为削弱的单机 loopback
+链路，只用于通信压力诊断。
+
+## 3. 结果
+
+### Setting A：4 卡、1024 MiB bucket、非阻塞、SHM
+
+| 模型 | Dense | Top-K | Rand-K | ARC-TopK | ARC 相对 Dense |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 60M | 60.12 | 115.12 | 73.50 | 73.83 | 慢 22.80% |
+| 130M | 121.02 | 280.86 | 130.91 | 123.77 | 慢 2.27% |
+| 350M | 305.92 | 726.99 | 310.58 | 287.41 | 快 6.05% |
+| 1B† | 667.56 | 1433.71 | 904.65 | 576.26 | 快 13.68% |
+
+### Setting B：4 卡、严格阻塞、SHM
+
+| 模型 | Dense | Top-K | Rand-K | ARC-TopK | ARC 相对 Dense |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 60M | 62.19 | 103.91 | 77.04 | 76.67 | 慢 23.29% |
+| 130M | 125.46 | 225.24 | 133.54 | 129.11 | 慢 2.91% |
+| 350M | 324.99 | 495.94 | 321.97 | 296.69 | 快 8.71% |
+| 1B† | 702.06 | 1630.27 | 936.96 | 601.15 | 快 14.37% |
+
+### Setting C：8 卡、严格阻塞、SHM
+
+| 模型 | Dense | Top-K | Rand-K | ARC-TopK | ARC 相对 Dense |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 60M | 69.12 | 225.41 | 77.64 | 77.31 | 慢 11.84% |
+| 130M | 139.77 | 615.15 | 139.44 | 138.51 | 快 0.90% |
+| 350M | 356.33 | 1202.17 | 329.58 | 308.13 | 快 13.53% |
+| 1B† | 723.16 | 5546.88 | 920.87 | 583.88 | 快 19.26% |
+
+### Setting D：8 卡、严格阻塞、Socket
+
+| 模型 | Dense | Top-K | Rand-K | ARC-TopK | ARC 相对 Dense |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 60M | 244.75 | 392.85 | 135.21 | 155.89 | 快 36.31% |
+| 130M | 558.77 | 899.76 | 289.22 | 320.97 | 快 42.56% |
+| 350M | 1560.76 | 2414.47 | 747.79 | 818.54 | 快 47.55% |
+| 1B† | 3351.05 | 6715.47 | 2124.38 | 1888.22 | 快 43.65% |
+
+† 1B 使用 BF16、seq64；其余三种模型使用 FP32、seq256。因此 1B 只可在自身同一行内
+比较方法，不能把跨模型变化完全归因于参数规模。
+
+## 4. 结论与限制
+
+- ARC-TopK 的收益随模型和通信压力增大而出现：setting A/B 的 60M、130M 仍慢于
+  Dense，350M 和 1B 则更快；8 卡严格阻塞 SHM 下从 130M 起不慢于 Dense，350M
+  和 1B 分别快 13.53% 和 19.26%。
+- 人为 Socket 压力下，ARC-TopK 四个规模均快于 Dense 36.31%–47.55%，说明通信进入
+  关键路径后压缩流量可以转化为端到端收益；该 setting 不代表真实多节点网络。
+- Top-K 在全部 16 个同组比较中都慢于 Dense，尤其 8 卡 SHM 的大模型开销异常高；
+  需要通过 collective 数量和通信/索引聚合 profiler 进一步定位，不能把它解释为
+  稀疏压缩本身必然无效。
+- Socket 下 Rand-K 在 60M、130M、350M 比 ARC-TopK 更快，1B 则由 ARC-TopK 更快；
+  这反映 ARC 投影/选行开销与通信节省之间存在规模相关的折衷。
+- Setting A 与 B 同时改变 bucket cap 和 blocking，不能用两者差值单独估计关闭 overlap
+  的因果效应。所有 cell 均为单次进程轨迹、单 seed（`n=1`）；50 个 measured steps
+  不是 50 个独立重复，当前结果属于探索性 timing。

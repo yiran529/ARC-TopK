@@ -129,3 +129,16 @@
 - 本次实际运行为 Rand-K，而非低秩 Rank-k；每组仅一个 seed，未保存 checkpoint，
   不能给出稳定优劣结论，也不将相同保留比例解释为相同通信量。下一步补独立 seed，
   必要时在相同数据目录重跑 60M Dense/ARC。
+
+## 2026-10-03：CM058–CM121 Top-K/Rand-K timing 矩阵
+
+- C4/LLaMA 上以 tensor 级 Top-K、Rand-K + EF14 与同组 Dense/ARC-TopK 比较；比例
+  0.2，前 100 步 Dense，第 101 步起压缩。60M/130M/350M 使用 FP32/seq256，
+  1B 使用 BF16/seq64；四种通信 setting 与 M002 同批次一致。
+- Top-K 在 16 个模型×setting 比较中均慢于 Dense；8 卡严格阻塞 SHM 的 350M/1B
+  分别为 `1202.17/5546.88 ms`，对应 Dense `356.33/723.16 ms`，需要进一步 profile
+  collective 数量和索引聚合路径。
+- Rand-K 在 8 卡 Socket 下相对 Dense 的加速为 60M `44.76%`、130M `48.24%`、
+  350M `52.09%`、1B `36.61%`；前三种规模快于 ARC-TopK，1B 则慢于 ARC-TopK。
+- 全部 cell 完成且退出码为 0；完整步时、同组差值、实验限制及 canonical source
+  见 [results](../results.md)。这些仍是单次、单 seed 的探索性 timing。

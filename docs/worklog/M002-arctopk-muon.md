@@ -120,3 +120,17 @@ Muon，而不是 Dense Muon 的通信等价实现。
 - 相较 CM005-rerun1，LR 和步数均改变，旧数据无法做文件内容核验；不能将改善
   单独归因于 LR。结果为单 seed、未保存 checkpoint。汇总及原始来源链接见
   [results](../results.md)。下一步比较完成后的 CM018/CM019，并补独立重复。
+
+## 2026-10-03：CM058–CM121 ARC-TopK timing 矩阵
+
+- 在梯度 DDP hook 上运行 ARC-TopK + EF14，比例 0.2、rank 4；前 100 步 Dense，
+  第 101 步起压缩。四种 setting 依次为 4 卡/1024 MiB/非阻塞/SHM、4 卡/默认
+  bucket/严格阻塞/SHM、8 卡/严格阻塞/SHM、8 卡/严格阻塞/Socket。
+- ARC 相对同组 Dense 的耗时变化（A/B/C/D）：60M 为
+  `慢22.80%/慢23.29%/慢11.84%/快36.31%`，130M 为
+  `慢2.27%/慢2.91%/快0.90%/快42.56%`，350M 为
+  `快6.05%/快8.71%/快13.53%/快47.55%`，1B 为
+  `快13.68%/快14.37%/快19.26%/快43.65%`。
+- 64/64 总矩阵 cell 均完成；原始 summary/comparisons 与完整四方法表见
+  [results](../results.md)。结果为单次、单 seed；1B 使用 BF16/seq64，其余使用
+  FP32/seq256，Socket 为人为通信压力，A/B 还同时改变 bucket 与 blocking。

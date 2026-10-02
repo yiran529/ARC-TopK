@@ -8,7 +8,13 @@ import torch.distributed as dist
 
 import comm_hooks.default_hooks as default_hooks
 
-from comm_hooks.utils import HookState, _get_allgather_out_list, dtype_bits, tensor_bits
+from comm_hooks.utils import (
+    HookState,
+    _get_allgather_out_list,
+    dtype_bits,
+    synchronize_blocking_communication,
+    tensor_bits,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +259,7 @@ def sparse_hook_sync(
             state.global_error_dict[bucket_index] = torch.clone(input_tensor).detach()
             # reset the full input tensor
             state.maybe_increase_iter(bucket)
+            synchronize_blocking_communication(state, input_tensor)
             fut: torch.futures.Future[torch.Tensor] = torch.futures.Future()
             fut.set_result(input_tensor)
             return fut
@@ -328,6 +335,7 @@ def sparse_hook_sync(
         input_tensor.copy_(state.global_error_dict[bucket_index])
 
     state.maybe_increase_iter(bucket)
+    synchronize_blocking_communication(state, input_tensor)
 
     fut: torch.futures.Future[torch.Tensor] = torch.futures.Future()
     fut.set_result(input_tensor)
@@ -368,7 +376,7 @@ def sparse_hook_sync_large_batch_ef21(
     # Run vanilla allreduce in the first `start_compress_iter` iterations.
     if state.iter < 1:
         state.maybe_increase_iter(bucket)
-        return default_hooks._allreduce_fut(group_to_use, input_tensor)
+        return default_hooks._allreduce_fut(group_to_use, input_tensor, state)
     elif state.iter < state.start_compress_iter:
         if bucket_index not in state.error_dict:
             logger.info("A tensor of length %s that represents local/global error is created.", total_length)
@@ -384,6 +392,7 @@ def sparse_hook_sync_large_batch_ef21(
         state.global_error_dict[bucket_index].add_(input_tensor, alpha=1.0)
         # reset the full input tensor
         state.maybe_increase_iter(bucket)
+        synchronize_blocking_communication(state, input_tensor)
         fut: torch.futures.Future[torch.Tensor] = torch.futures.Future()
         fut.set_result(input_tensor)
         return fut
@@ -441,6 +450,7 @@ def sparse_hook_sync_large_batch_ef21(
     input_tensor.copy_(state.global_error_dict[bucket_index])
 
     state.maybe_increase_iter(bucket)
+    synchronize_blocking_communication(state, input_tensor)
 
     fut: torch.futures.Future[torch.Tensor] = torch.futures.Future()
     fut.set_result(input_tensor)

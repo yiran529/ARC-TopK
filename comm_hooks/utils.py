@@ -43,6 +43,16 @@ def _get_allgather_out_list(all_gather_in_list, world_size):
     ]
     return out_list
 
+
+def synchronize_blocking_communication(hook_state, tensor):
+    """Fence CUDA hook work before returning when strict blocking is enabled."""
+    if (
+        hook_state is not None
+        and getattr(hook_state, "blocking_communication", False)
+        and tensor.is_cuda
+    ):
+        torch.cuda.synchronize(tensor.device)
+
  
 class HookState:
     
@@ -62,6 +72,7 @@ class HookState:
         self.adam_freeze_key = False 
 
         self.comm_bits_this_round = 0
+        self.blocking_communication = False
 
     def init_momentum_field(self, param_state, beta1):
         self.param_state = param_state
@@ -207,6 +218,11 @@ def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None)
         model.register_comm_hook(hook_state, my_allreduce_hook) 
     else:
         raise ValueError(f"Compressor {args.compressor} not supported.")
+
+    if hook_state is not None:
+        hook_state.blocking_communication = getattr(
+            args, "blocking_communication", False
+        )
     
     # For selective compression
     if hasattr(hook_state, 'param_to_name'):

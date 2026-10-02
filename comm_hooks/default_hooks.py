@@ -4,7 +4,12 @@ from typing import Any, Callable, cast, Tuple
 import torch
 import torch.distributed as dist
 
-from comm_hooks.utils import HookState, dtype_bits, tensor_bits
+from comm_hooks.utils import (
+    HookState,
+    dtype_bits,
+    synchronize_blocking_communication,
+    tensor_bits,
+)
 
 __all__ = [     
     "allreduce_hook",
@@ -28,6 +33,13 @@ def _allreduce_fut(
         
         hook_state.comm_bits_this_round += comm_bits
 
+    if hook_state is not None and hook_state.blocking_communication:
+        dist.all_reduce(tensor, group=group_to_use, async_op=False)
+        synchronize_blocking_communication(hook_state, tensor)
+        fut: torch.futures.Future[torch.Tensor] = torch.futures.Future()
+        fut.set_result(tensor)
+        return fut
+
     return (
         dist.all_reduce(tensor, group=group_to_use, async_op=True).get_future().then(lambda fut: fut.value()[0]) # fut.value() 返回的是一个长度为 1 的张量列表（即 [tensor]），所以取下标 0
     )
@@ -44,4 +56,3 @@ def allreduce_hook(
     process_group: dist.ProcessGroup, bucket: dist.GradBucket
 ) -> torch.futures.Future[torch.Tensor]:
     return _allreduce_fut(process_group, bucket.buffer())
-
