@@ -80,3 +80,33 @@
   无 `all_results.json`；CM017–CM019 尚无 started 记录，不填最终指标。
 - 下一步：C4 队列完成后核验其最终 validation loss/PPL；GLUE 补全 SST-2 ARC，
   并统一 batch/GA 后做多 seed 对照。
+
+## 2026-10-02：CM016–CM019 最终 C4 结果核验
+
+- 按 `experiment-results-reporting` 更新结果记录。四组均达到目标更新步数，
+  `train.log` 有 `Reached max number of update steps` 和 `Script finished successfully`，
+  队列状态均为 `exit_code=0`；最后一组于北京时间 11:49 完成，队列失败数为 0。
+- 来源：各 `output/CM016-…` 至 `output/CM019-…` 目录的 `all_results.json`，
+  使用 `final_eval_loss`、`final_eval_perplexity`；对应 validation、final，
+  非训练中最后一条 loss 或 best。完整运行标识和来源链接见 [results](../results.md)。
+- 实际启动参数与本地 W&B 元数据一致：60M 为 8,393 步、matrix LR 0.02、
+  每卡 batch 32、GA 4；130M 为 20,000 步、matrix LR 0.01、每卡 batch 16、GA 8。
+  均为 GPU 0–3 的 4 张 RTX 4090、seed 1243、FP32、全局 batch 512；
+  tensor 级稀疏化、比例 0.2、EF14、第 1,000 次梯度同步起压缩，关闭渐进压缩。
+- 最终指标：
+
+| 实验 | 方法 | final update | validation loss | PPL | 有效预测 token |
+| --- | --- | ---: | ---: | ---: | ---: |
+| CM016 | 60M Top-K | 8,393 | 3.415821 | 30.441934 | 10,020,666 |
+| CM017 | 60M Rand-K | 8,393 | 3.643432 | 38.222805 | 10,020,666 |
+| CM018 | 130M Top-K | 20,000 | 3.082575 | 21.814495 | 10,008,907 |
+| CM019 | 130M Rand-K | 20,000 | 3.155567 | 23.466328 | 10,008,907 |
+
+- 130M 与同数据、同预算 CM014 Dense 对照：Top-K 的 PPL 高 0.121990（0.56%），
+  Rand-K 高 1.773823（8.18%）；Top-K 比同预算 CM015 ARC 低 0.132199。
+  60M 同数据 Top-K 比 Rand-K 低 7.780871；相对历史 CM001 Dense 分别为
+  −0.103505（−0.34%）、+7.677366（+25.13%），但旧数据文件内容无法核验，
+  与历史 Dense/ARC 的差值仅作描述性参考。
+- 本次实际运行为 Rand-K，而非低秩 Rank-k；每组仅一个 seed，未保存 checkpoint，
+  不能给出稳定优劣结论，也不将相同保留比例解释为相同通信量。下一步补独立 seed，
+  必要时在相同数据目录重跑 60M Dense/ARC。

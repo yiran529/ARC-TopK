@@ -16,14 +16,16 @@
 | CM005-rerun1 | LLaMA 130M | ARC-TopK + Muon，matrix LR 0.02 | 16,785 | 完成 |
 | CM014 | LLaMA 130M | Dense Muon，matrix LR 0.01 | 20,000 | 完成 |
 | CM015 | LLaMA 130M | ARC-TopK + Muon，matrix LR 0.01 | 20,000 | 完成 |
-| CM016 | LLaMA 60M | Top-K + EF14 + Muon，matrix LR 0.02 | 8,393 | 训练已启动，未完成 |
-| CM017 | LLaMA 60M | Rand-K + EF14 + Muon，matrix LR 0.02 | 8,393 | 尚未启动 |
-| CM018 | LLaMA 130M | Top-K + EF14 + Muon，matrix LR 0.01 | 20,000 | 尚未启动 |
-| CM019 | LLaMA 130M | Rand-K + EF14 + Muon，matrix LR 0.01 | 20,000 | 尚未启动 |
+| CM016 | LLaMA 60M | Top-K + EF14 + Muon，matrix LR 0.02 | 8,393 | 完成 |
+| CM017 | LLaMA 60M | Rand-K + EF14 + Muon，matrix LR 0.02 | 8,393 | 完成 |
+| CM018 | LLaMA 130M | Top-K + EF14 + Muon，matrix LR 0.01 | 20,000 | 完成 |
+| CM019 | LLaMA 130M | Rand-K + EF14 + Muon，matrix LR 0.01 | 20,000 | 完成 |
 
 CM003/CM005 首次启动因 `torchrun` 参数解析问题失败，修复后重跑成功。
 CM013 以及原 16,785 步的 CM014/CM015 队列均在训练前取消并被替代，不计为完成结果。
-CM014/CM015 状态文件记录两组 `exit_code=0`；CM016–CM019 状态为本次核验快照。
+CM014–CM019 均有成功完成标记和 `exit_code=0`；CM016–CM019 队列于
+2026-10-02 11:49（北京时间）结束，`finished_failures=0`。
+这里的 Rand-K 是随机稀疏压缩，不是低秩 Rank-k。
 
 ## 2. 核心设置
 
@@ -37,7 +39,7 @@ CM014/CM015 状态文件记录两组 `exit_code=0`；CM016–CM019 状态为本�
 - ARC-TopK：`compress_ratio=0.2`、`r=4`、EF14，从梯度同步迭代 1,000 开始压缩。
   Top-K/Rand-K：tensor 级、比例 `0.2`、EF14，同样从迭代 1,000 开始；
   `--disable_compression_warmup` 关闭渐进压缩。
-- CM014/CM015 实际使用 GPU 0–3。最终评估为 validation 上约 10M 有效预测 token，
+- CM014–CM019 实际使用 GPU 0–3。最终评估为 validation 上约 10M 有效预测 token，
   loss 按有效预测 token 加权，PPL 使用入口保存的 `exp(loss)`；未保存模型 checkpoint。
 - 运行脚本：[CM001](../c4/scripts/run_cm001_muon_60m_c4.sh)、
   [CM002–CM005](../c4/scripts/run_cm002_cm005_serial.sh)、
@@ -49,7 +51,8 @@ CM014/CM015 状态文件记录两组 `exit_code=0`；CM016–CM019 状态为本�
 来源为各运行的 `all_results.json`，原始键为 `final_eval_loss` 和
 `final_eval_perplexity`；均为 validation、final。最终步数与完成状态由同目录训练日志
 的 `Reached max number of update steps`、`Script finished successfully` 和队列状态核对。
-CM016–CM019 尚无最终结果，不将训练中的最后一条 loss 当作 final。
+60M 最终评估为 10,020,666 个有效预测 token，130M 为 10,008,907 个；
+同规模表内运行的评估 token 数一致。
 
 | 实验 | 方法 | Eval loss | PPL | final update | 结果来源 |
 | --- | --- | ---: | ---: | ---: | --- |
@@ -60,6 +63,10 @@ CM016–CM019 尚无最终结果，不将训练中的最后一条 loss 当作 fi
 | CM005-rerun1 | 130M ARC+Muon | 3.427855 | 30.810485 | 16,785 | [JSON](../output/CM005-m002-arctopk-muon-llama130m-c4-2p2b-ws4-s1243-rerun1/all_results.json) |
 | CM014 | 130M Dense Muon，LR 0.01 | 3.076967 | 21.692504 | 20,000 | [JSON](../output/CM014-m001-dense-muon-llama130m-c4-2p62b-ws4-s1243-lr001/all_results.json) |
 | CM015 | 130M ARC+Muon，LR 0.01 | 3.088616 | 21.946693 | 20,000 | [JSON](../output/CM015-m002-arctopk-muon-llama130m-c4-2p62b-ws4-s1243-lr001/all_results.json) |
+| CM016 | 60M Top-K+Muon | 3.415821 | 30.441934 | 8,393 | [JSON](../output/CM016-m003-topk-muon-llama60m-c4-1p1b-ws4-s1243-lr002/all_results.json) |
+| CM017 | 60M Rand-K+Muon | 3.643432 | 38.222805 | 8,393 | [JSON](../output/CM017-m003-randk-muon-llama60m-c4-1p1b-ws4-s1243-lr002/all_results.json) |
+| CM018 | 130M Top-K+Muon，LR 0.01 | 3.082575 | 21.814495 | 20,000 | [JSON](../output/CM018-m003-topk-muon-llama130m-c4-2p62b-ws4-s1243-lr001/all_results.json) |
+| CM019 | 130M Rand-K+Muon，LR 0.01 | 3.155567 | 23.466328 | 20,000 | [JSON](../output/CM019-m003-randk-muon-llama130m-c4-2p62b-ws4-s1243-lr001/all_results.json) |
 
 ## 4. 结论
 
@@ -68,10 +75,18 @@ CM016–CM019 尚无最终结果，不将训练中的最后一条 loss 当作 fi
 - 130M、LR 0.02、16,785 步：ARC+Muon 的 PPL 高 `7.600732`（约 `32.75%`）。
 - 新增 130M、LR 0.01、20,000 步对照：ARC+Muon 的 loss 高 `0.011650`，
   PPL 高 `0.254189`（约 `1.17%`），在本次配置下与 Dense Muon 接近。
+- 同预算 130M 压缩器对照：Top-K 相对 CM014 Dense 的 loss 高 `0.005608`、
+  PPL 高 `0.121990`（`0.56%`）；Rand-K 的 loss 高 `0.078600`、PPL 高
+  `1.773823`（`8.18%`）。Top-K 的 PPL 比 CM015 ARC 低 `0.132199`，
+  本次运行排序为 Dense、Top-K、ARC-TopK、Rand-K。
+- 60M Top-K 的 PPL 比同数据、同预算 Rand-K 低 `7.780871`。相对历史 CM001
+  Dense，Top-K 的 PPL 低 `0.103505`（`0.34%`），Rand-K 高 `7.677366`
+  （`25.13%`）；与历史 Dense/ARC 的比较因旧数据内容无法核验，只作描述性参考。
 - 新旧 130M 实验同时改变 matrix LR 和训练预算，且数据文件内容无法跨目录核验；
   不能把改善单独归因于 LR，也不能据此断言所有 130M ARC 配置均能保持质量。
-- 均为单 seed（`n=1`）的初步结果。下一步核验 CM016–CM019 完成结果，再做同预算
-  的压缩器比较；要分离 LR 与训练预算影响，需要保持其他条件一致的独立对照。
+- 均为单 seed（`n=1`）的初步结果，不据此判断稳定优劣。相同保留比例不代表相同
+  实际通信量，本表仅比较固定训练预算下的验证质量。下一步补独立 seed，必要时在
+  新数据路径重跑 60M Dense/ARC；分离 LR 与训练预算影响仍需独立对照。
 
 # CIFAR-10 ResNet-18/50 实验结果
 
