@@ -1,5 +1,22 @@
 # M002：ARC-TopK 与 Muon 组合
 
+## 2026-10-02：准备 ARC-TopK Table V Muon 测速
+
+- 计划用 CM023、CM027、CM031、CM035 测量 ARC-TopK + Muon 的四种 LLaMA 规模。
+- 比例0.2、rank 4、EF14，在100步热身后立即以目标比例压缩并连续统计50步。
+- 按用户决定沿用正常训练的压缩覆盖，不增加二维参数筛选；压缩梯度后再执行
+  Muon正交化，属于近似Muon。协议与接受规则见 `docs/table-v-muon-protocol.md`。
+- 当前条目记录实现与启动准备，结果须在各单元完整结束后另行追加。
+- 4张RTX 4090真实C4短smoke使用GPU 4–7，ARC-TopK完成1步热身和2步测量；
+  NCCL日志确认 `SHM/direct/direct`。短窗口结果不进入正式表格。
+- 16:57（北京时间）CM020–CM035正式串行队列已在tmux会话
+  `arctopk_table_v_muon` 启动，固定使用GPU 4–7；ARC单元将在各同规模前三个
+  对照之后运行。状态与原始产物保存在 `output/CM020-CM035-table-v-muon/`。
+- 用户随后将正式dtype修正为训练脚本使用的FP32。已完成的BF16 ARC单元仅保留为
+  非正式产物；FP32单元使用 `CM023/027/031/035-rerun1` 身份和独立目录重跑。
+- 17:09（北京时间）FP32队列已在 `arctopk_table_v_muon_fp32` 会话启动，
+  固定使用GPU 4–7；不对预计无法装入24GB显存的1B单元自动降级。
+
 ## 2026-10-01：CM013，130M matrix LR 0.01 对照
 
 - 目的：在 CM005-rerun1 的 130M C4 ARC-TopK + Muon 配置上仅将 matrix LR 从

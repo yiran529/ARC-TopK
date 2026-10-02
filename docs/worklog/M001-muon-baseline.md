@@ -1,5 +1,28 @@
 # M001：可切换的 Muon 基线
 
+## 2026-10-02：准备 ARC-TopK Table V Muon 测速
+
+- 计划用 CM020、CM024、CM028、CM032 测量 60M、130M、350M、1B Dense Muon。
+- 论文 Table V 的 Adam 替换为统一 Muon；每卡 batch 1、序列长度256、100步热身后
+  连续统计50步。详细协议见 `docs/table-v-muon-protocol.md`。
+- Dense 是同模型压缩臂的主要墙钟对照；Muon内部AllGather保留并计入端到端时间。
+- 当前条目记录实现与启动准备，结果须在各单元完整结束后另行追加。
+- 4张RTX 4090真实C4短smoke使用GPU 4–7，Dense完成1步热身和2步测量；
+  NCCL日志确认 `SHM/direct/direct`。短窗口结果不进入正式表格。
+- 16:57（北京时间）正式串行队列已在tmux会话 `arctopk_table_v_muon` 启动，
+  固定使用GPU 4–7；CM020已进入运行。产物根目录为
+  `output/CM020-CM035-table-v-muon/`，控制器日志为
+  `logs/CM020-CM035-table-v-muon-controller.log`。
+- 用户随后要求使用仓库正式C4训练脚本的FP32口径。BF16队列在CM020–CM031完成、
+  CM032运行时停止；全部旧产物保留但不纳入正式汇总。FP32重跑使用 `rerun1`
+  身份和独立目录 `output/CM020-CM035-table-v-muon-fp32-rerun1/`。
+- 1B Dense FP32的1+1步smoke在首次Muon step OOM；24GB卡每rank约已用
+  23.02 GiB，`torch.stack` 尚需1.50 GiB。按预注册失败规则保留1B正式单元，
+  不自动改变dtype、batch或实现，失败后继续队列。
+- 17:09（北京时间）FP32 `rerun1` 正式串行队列已在tmux会话
+  `arctopk_table_v_muon_fp32` 启动，固定使用GPU 4–7；控制器日志为
+  `logs/CM020-CM035-table-v-muon-fp32-rerun1-controller.log`。
+
 ## 2026-10-01：CM014，130M matrix LR 0.01 对照
 
 - 用户要求与 ARC-TopK + Muon 先后串行比较。CM014 在 CM004 的 130M Dense Muon

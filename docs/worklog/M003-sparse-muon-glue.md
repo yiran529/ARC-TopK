@@ -1,5 +1,24 @@
 # M003：GLUE Top-K/Rand-K 与 Muon 组合
 
+## 2026-10-02：准备 ARC-TopK Table V Muon 测速
+
+- 计划用 CM021/CM025/CM029/CM033 测量 Top-K + Muon，用
+  CM022/CM026/CM030/CM034 测量 Rand-K + Muon。
+- 两组均使用 tensor-wise 比例0.2、EF14，在100步热身后立即以目标比例压缩，
+  连续统计50步；其余数据、模型与Muon设置和Dense/ARC臂一致。
+- 按用户决定沿用正常训练的压缩覆盖，不增加二维参数筛选。详细协议见
+  `docs/table-v-muon-protocol.md`；结果须在各单元完整结束后另行追加。
+- 4张RTX 4090真实C4短smoke使用GPU 4–7，Top-K、Rand-K均完成1步热身和2步
+  测量；NCCL日志确认 `SHM/direct/direct`。修正测速入口的逐步通信量累计后，
+  Top-K复测四个rank均记录非零DDP通信量。短窗口结果不进入正式表格。
+- 16:57（北京时间）CM020–CM035正式串行队列已在tmux会话
+  `arctopk_table_v_muon` 启动，固定使用GPU 4–7；Top-K/Rand-K单元按模型规模
+  串行执行。状态与原始产物保存在 `output/CM020-CM035-table-v-muon/`。
+- 用户随后将正式dtype修正为训练脚本使用的FP32。已完成的BF16 Top-K/Rand-K
+  单元仅保留为非正式产物；FP32单元使用原实验号的 `rerun1` 身份独立重跑。
+- 17:09（北京时间）FP32队列已在 `arctopk_table_v_muon_fp32` 会话启动，
+  固定使用GPU 4–7；失败单元保留证据并继续后续单元。
+
 ## 2026-09-29：EF21 正式对照启动
 
 - 目的：以此前 GLUE Dense Muon／ARC-TopK + Muon 正式运行的训练设置，对照 tensor 级 Top-K、Rand-K 与 Muon 的组合。梯度在 DDP 通信 hook 中压缩，同步后再由 Muon 更新。
