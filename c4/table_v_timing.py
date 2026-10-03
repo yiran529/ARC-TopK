@@ -12,6 +12,68 @@ import subprocess
 import time
 
 
+def summarize_blocking_hook_timing(rank_times, rank_counts, rank_bytes, expected_steps):
+    if (expected_steps <= 0 or not rank_times
+            or len(rank_times) != len(rank_counts) or len(rank_times) != len(rank_bytes)):
+        raise ValueError("Invalid strict hook timing window")
+    for times, counts, layouts in zip(rank_times, rank_counts, rank_bytes):
+        if not len(times) == len(counts) == len(layouts) == expected_steps:
+            raise ValueError("Incomplete strict hook timing window")
+        if any(not math.isfinite(value) or value <= 0 for value in times):
+            raise ValueError("Nonfinite or nonpositive hook time")
+        if any(count <= 0 or count != len(layout) for count, layout in zip(counts, layouts)):
+            raise ValueError("Invalid bucket count or layout")
+        if any(size <= 0 for layout in layouts for size in layout):
+            raise ValueError("Invalid bucket bytes")
+    totals = [sum(times) for times in rank_times]
+    slowest = max(range(len(totals)), key=totals.__getitem__)
+    return {
+        "mean_blocking_hook_seconds": totals[slowest] / expected_steps,
+        "blocking_hook_slowest_rank": slowest,
+        "rank_blocking_hook_seconds": totals,
+        "rank_hook_step_seconds": rank_times,
+        "rank_bucket_counts": rank_counts,
+        "rank_bucket_bytes": rank_bytes,
+        "observed_bucket_counts": sorted({n for counts in rank_counts for n in counts}),
+        "observed_bucket_bytes": [list(layout) for layout in sorted(
+            {tuple(layout) for layouts in rank_bytes for layout in layouts})],
+    }
+
+
+class StrictHookRecorder:
+    def __init__(self):
+        self.inner_state = self.inner_hook = None
+        self.times = []
+        self.bucket_bytes = []
+
+    def wrap(self, state, hook):
+        self.inner_state, self.inner_hook = state, hook
+        return self, strict_blocking_hook
+
+    def finish_step(self):
+        if not self.times:
+            raise RuntimeError("No hook calls in strict timing update")
+        result = sum(self.times), len(self.times), list(self.bucket_bytes)
+        self.times.clear()
+        self.bucket_bytes.clear()
+        return result
+
+
+def strict_blocking_hook(state, bucket):
+    import torch
+
+    device = bucket.buffer().device
+    torch.cuda.synchronize(device)
+    started = time.perf_counter()
+    value = state.inner_hook(state.inner_state, bucket).wait()
+    torch.cuda.synchronize(device)
+    state.times.append(time.perf_counter() - started)
+    state.bucket_bytes.append(bucket.buffer().numel() * bucket.buffer().element_size())
+    completed = torch.futures.Future()
+    completed.set_result(value)
+    return completed
+
+
 def accumulate_hook_communication_bits(hook_state, total_bits):
     if hook_state is None or not hasattr(hook_state, "comm_bits_this_round"):
         return total_bits
@@ -59,6 +121,7 @@ def parse_args():
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--ddp_bucket_cap_mb", type=float, default=None)
     parser.add_argument("--blocking_communication", action="store_true")
+    parser.add_argument("--strict_blocking_communication", action="store_true")
     parser.add_argument("--seed", type=int, default=1243)
     parser.add_argument("--optimizer", choices=("muon", "adamw"), default="muon")
     parser.add_argument("--lr", type=float, default=0.01)
@@ -85,6 +148,10 @@ def parse_args():
         parser.error("Unsupported Table V compressor")
     if args.compressor != "none" and args.start_compress_iter > args.warmup_iterations:
         parser.error("Compression must be active throughout the measured window")
+    if args.strict_blocking_communication and args.blocking_communication:
+        parser.error("Use the strict wrapper alone; do not add the legacy blocking flag")
+    if args.ddp_bucket_cap_mb is not None and args.ddp_bucket_cap_mb <= 0:
+        parser.error("DDP bucket cap must be positive")
     return args
 
 
@@ -181,7 +248,10 @@ def main():
     if args.ddp_bucket_cap_mb is not None:
         ddp_options["bucket_cap_mb"] = args.ddp_bucket_cap_mb
     model = torch.nn.parallel.DistributedDataParallel(model, **ddp_options)
-    hook_state = register_comm_hook_for_ddp_model(model, dist.group.WORLD, args)
+    recorder = StrictHookRecorder() if args.strict_blocking_communication else None
+    hook_state = register_comm_hook_for_ddp_model(
+        model, dist.group.WORLD, args, hook_wrapper=recorder.wrap if recorder else None
+    )
     parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
 
     if rank == 0:
@@ -219,6 +289,9 @@ def main():
                     "NCCL_SHM_DISABLE",
                     "NCCL_CUMEM_HOST_ENABLE",
                     "NCCL_DEBUG",
+                    "NCCL_MIN_NCHANNELS", "NCCL_MAX_NCHANNELS",
+                    "NCCL_MIN_CTAS", "NCCL_MAX_CTAS",
+                    "NCCL_NET", "NCCL_SOCKET_IFNAME",
                 )
             },
             code_sha256={
@@ -237,6 +310,8 @@ def main():
     step_seconds = []
     losses = []
     ddp_communication_bits = 0
+    hook_step_seconds, bucket_counts, bucket_bytes = [], [], []
+    muon_bits_before = None
     window_start = None
     total_iterations = args.warmup_iterations + args.measured_iterations
     for step in range(total_iterations):
@@ -244,9 +319,11 @@ def main():
             dist.barrier()
             torch.cuda.synchronize()
             torch.cuda.reset_peak_memory_stats()
-            window_start = time.perf_counter()
+            if args.optimizer == "muon":
+                muon_bits_before = optimizer.communication_bits_stats()["total"]
             if rank == 0:
                 print(f"MEASUREMENT_START update={step + 1}", flush=True)
+            window_start = time.perf_counter()
         iteration_start = time.perf_counter()
         batch = next(batches)
         if batch["input_ids"].shape[0] != args.batch_size:
@@ -261,19 +338,24 @@ def main():
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad()
-        ddp_communication_bits = accumulate_hook_communication_bits(
-            hook_state, ddp_communication_bits
-        )
+        step_bits = accumulate_hook_communication_bits(hook_state, 0)
         torch.cuda.synchronize()
         iteration_end = time.perf_counter()
+        hook_step = recorder.finish_step() if recorder else None
         if step >= args.warmup_iterations:
+            ddp_communication_bits += step_bits
             step_seconds.append(iteration_end - iteration_start)
-            losses.append(loss.detach().float().cpu())
+            losses.append(loss.detach())
+            if hook_step is not None:
+                seconds, count, layout = hook_step
+                hook_step_seconds.append(seconds)
+                bucket_counts.append(count)
+                bucket_bytes.append(layout)
         elif rank == 0 and (step == 0 or (step + 1) % 25 == 0):
             print(f"WARMUP update={step + 1} loss={loss.item():.6f}", flush=True)
 
     elapsed = iteration_end - window_start
-    local_losses = torch.stack(losses).tolist()
+    local_losses = torch.stack(losses).float().cpu().tolist()
     if not all(math.isfinite(value) for value in local_losses):
         raise RuntimeError("Nonfinite loss during measurement")
     local_result = {
@@ -283,6 +365,14 @@ def main():
         "peak_allocated_bytes": torch.cuda.max_memory_allocated(),
         "peak_reserved_bytes": torch.cuda.max_memory_reserved(),
         "ddp_communication_bits": ddp_communication_bits,
+        "hook_step_seconds": hook_step_seconds,
+        "bucket_counts": bucket_counts,
+        "bucket_bytes": bucket_bytes,
+        "muon_communication_bits": (
+            {key: value - muon_bits_before.get(key, 0)
+             for key, value in optimizer.communication_bits_stats()["total"].items()}
+            if args.optimizer == "muon" else None
+        ),
     }
     gathered = [None] * world_size
     dist.all_gather_object(gathered, local_result)
@@ -313,7 +403,19 @@ def main():
                 if args.optimizer == "muon"
                 else None
             ),
+            rank_measured_muon_communication_bits=[
+                item["muon_communication_bits"] for item in gathered
+            ],
+            communication_bits_scope="ddp=measured window; legacy muon field=whole run",
+            strict_blocking_communication=args.strict_blocking_communication,
         )
+        if recorder is not None:
+            result.update(summarize_blocking_hook_timing(
+                [item["hook_step_seconds"] for item in gathered],
+                [item["bucket_counts"] for item in gathered],
+                [item["bucket_bytes"] for item in gathered],
+                args.measured_iterations,
+            ))
         (output_dir / "all_results.json").write_text(
             json.dumps(result, indent=2) + "\n", encoding="utf-8"
         )

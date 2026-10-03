@@ -1,5 +1,44 @@
 # M002：ARC-TopK 与 Muon 组合
 
+## 2026-10-03：CM122–CM265 A–D FP32 计时完成
+
+- 22:36（北京时间）队列完成，144/144成功、0失败；每配置3次独立进程运行，
+  固定seed1243，预热50步、测量更新51–150。144个原始结果均实际单bucket，
+  同模型源码哈希一致；NCCL日志确认SHM，默认/单channel分别为2/1个coll channel。
+- 完整四方法iter/hook均值、样本标准差及ARC配对speedup记录于 `docs/results.md`
+  的“C4 / Muon：A–D FP32 严格通信路径测速（CM122–CM265）”章节。
+  原始结果与aggregate/comparisons位于 `output/CM122-CM265-strict-hook-abcd-fp32/`。
+- 350M四组ARC均在3轮降低iter/hook；D组iter 351.10→298.98 ms、hook
+  193.21→142.47 ms，配对耗时降低均值14.85%/26.26%。60M四组慢于Dense，
+  130M仅8卡出现小幅iter收益；Top-K全部组合慢于Dense。
+- 单channel增加相对speedup但350M绝对耗时高于默认channel。严格阻塞结果不能
+  外推为正常异步DDP吞吐；3次系统重复不是多训练seed质量证据。
+- 用户取消1B追加，未修改矩阵或启动1B。下一步若研究正常吞吐，需要单独做异步
+  bucket实验；本条仅归档现有结果，不启动新任务。
+
+## 2026-10-03：A–D FP32 严格通信路径计时准备
+
+- 用户批准4/8卡 × 默认/单channel SHM，只测FP32；50步预热、100步测量。
+  60M/130M/350M × Dense/Top-K/Rand-K/ARC，3次独立重复，共144次，CM122–CM265。
+- 在 `c4/table_v_timing.py` 增加统一严格hook包装、逐rank hook耗时及bucket布局；
+  `comm_hooks/utils.py` 仅增加可选hook包装接口，原算法不改。
+  压缩起点40，更新41–50预热压缩，窗口51–150；DDP cap8192，接受实际单bucket。
+- 控制器 `c4/scripts/run_strict_hook_abcd.py`；协议 `docs/strict-hook-abcd-fp32.md`。
+  结果目录 `output/CM122-CM265-strict-hook-abcd-fp32/`；同配置四方法随机顺序，
+  排序seed20261003，训练seed1243，串行运行，失败保留。
+- CPU计时汇总、无效窗口拒绝、单bucket接受及同轮配对检查通过；144个编号唯一。
+  本地C4 50个分片与t5-base缓存可用；8张RTX4090检查时均空闲。
+  四种方法4卡smoke位于 `/tmp/arctopk-strict-hook-smoke-20261003/`，4/4完成，
+  均退出0且实际单bucket。只读审查发现部分JSON可能中断队列，已增加错误记录并
+  继续下一臂的处理及回归验证；没有改变实验配置或算法。
+- 未产生正式结果。计时口径为梯度通信路径时间及完整更新墙钟时间，不能称为纯
+  wire time；Muon内部AllGather单独记录窗口bits增量，仍计入完整步耗时。
+- 20:41（北京时间）队列已在tmux会话 `arc_strict_abcd_fp32` 启动。
+  `status.tsv`确认144次串行运行，首臂
+  `CM122-m003-topk-llama60m-A-fp32-rep1-s1243` 已开始；会话pane存活。
+  launcher日志为 `output/CM122-CM265-strict-hook-abcd-fp32-launcher.log`。
+  5项CPU检查、四种方法4卡smoke、语法检查及diff检查通过；正式结果待队列完成。
+
 ## 2026-10-02：准备 ARC-TopK Table V Muon 测速
 
 - 计划用 CM023、CM027、CM031、CM035 测量 ARC-TopK + Muon 的四种 LLaMA 规模。

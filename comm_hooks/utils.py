@@ -176,7 +176,12 @@ class HookState:
             self.generator = restored
 
 
-def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None):
+def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None, hook_wrapper=None):
+    def register_hook(state, hook):
+        if hook_wrapper is not None:
+            state, hook = hook_wrapper(state, hook)
+        model.register_comm_hook(state, hook)
+
     hook_state = None
     if args.compressor == "topk_sync" or args.compressor == "randk_sync": 
         from comm_hooks.sparse_hook_c4 import SparseState, sparse_hook_sync
@@ -191,7 +196,7 @@ def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None)
             random_seed=args.seed,
             gradual_compression=not args.disable_compression_warmup,
         )
-        model.register_comm_hook(hook_state, sparse_hook_sync)
+        register_hook(hook_state, sparse_hook_sync)
   
 
     elif args.compressor == "group_topk_no_reshape" :
@@ -205,17 +210,17 @@ def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None)
             start_compress_iter=args.start_compress_iter,
             compress_ratio=args.compress_ratio,
         )
-        model.register_comm_hook(hook_state, group_topk_hook) 
+        register_hook(hook_state, group_topk_hook)
 
     elif args.compressor == 'noop': 
         from comm_hooks.debugging_hooks import noop_hook
-        model.register_comm_hook(None, noop_hook) 
+        register_hook(None, noop_hook)
 
     elif args.compressor == 'none' :
         from comm_hooks.default_hooks import my_allreduce_hook
         hook_state = HookState(process_group) 
         hook_state.start_compress_iter = args.start_compress_iter
-        model.register_comm_hook(hook_state, my_allreduce_hook) 
+        register_hook(hook_state, my_allreduce_hook)
     else:
         raise ValueError(f"Compressor {args.compressor} not supported.")
 
