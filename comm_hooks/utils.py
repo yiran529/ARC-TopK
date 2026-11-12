@@ -210,6 +210,7 @@ def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None,
             start_compress_iter=args.start_compress_iter,
             compress_ratio=args.compress_ratio,
         )
+        hook_state.implementation = getattr(args, "arc_topk_implementation", "fused")
         register_hook(hook_state, group_topk_hook)
 
     elif args.compressor == 'noop': 
@@ -239,6 +240,7 @@ def register_comm_hook_for_ddp_model(model, process_group, args, optimizer=None,
     return hook_state
 
 def add_comm_hook_args(parser):
+    parser.add_argument("--arc_topk_implementation", choices=("reference", "optimized", "fused", "pipeline"), default="fused")
     ### Commpressor arguments
     parser.add_argument(
         "--compressor",

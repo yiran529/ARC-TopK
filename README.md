@@ -245,6 +245,17 @@ variant rather than a communication-equivalent implementation of dense Muon.
 The optimizer's `communication_bits_stats()` method reports its gradient-layout
 and orthogonalization-result AllGather traffic separately from DDP hook traffic.
 
+For ARC-TopK, `--arc_topk_implementation fused` is the default implementation.
+It fuses row packing and EF14 clearing without changing the projection, selected
+rows, averaging, or collective payloads. Use `reference` for the original
+implementation or `optimized` for the first row-index implementation. EF21 and
+CPU execution retain the row-index path. The optional
+`--arc_topk_implementation pipeline` overlaps projection computation with
+asynchronous projection AllReduces while preserving random draws and collective
+payload order. It remains opt-in because speed benefits vary by model. Timing
+results and their strict-blocking scope are recorded in
+`docs/worklog/M002-arctopk-muon.md`.
+
 ## Citation
 
 ```
@@ -254,3 +265,6 @@ and orthogonalization-result AllGather traffic separately from DDP hook traffic.
   howpublished  = {\url{https://github.com/Aris-ma/ARC-TopK-release}},
 }
 ```
+
+Reports and semantic audits are archived in
+[docs/experiments/2026-11-12-arctopk-implementation](docs/experiments/2026-11-12-arctopk-implementation/README.md).

@@ -141,6 +141,137 @@ def decompress_memory_to_tensor_and_aggregate(tensors, k_list, values_memory, in
         offset += k
     return None
 
+
+def _row_view(tensor):
+    # Preserve the original dimensional layout, including its >2D reshape rule.
+    if tensor.dim() == 1:
+        return tensor.view(-1, 1)
+    if tensor.dim() == 2:
+        return tensor
+    m = 2 * tensor.shape[-1] ** 2
+    return tensor.reshape(tensor.numel() // m, m)
+
+
+def compress_rows(tensors, k_list, values_memory, indices_memory,
+                  compress_ratio, r, group, use_error_feedback):
+    value_offset = row_offset = bits_sum = 0
+    world_size = dist.get_world_size(group)
+    for tensor, k in zip(tensors, k_list):
+        rows = _row_view(tensor)
+        width = rows.shape[1]
+        if tensor.dim() == 1:
+            projection = tensor.clone()
+        else:
+            # Same random draw shape/order and GEMM as the reference.
+            v = torch.randn(width, r, device=tensor.device, dtype=tensor.dtype)
+            projection = rows @ v
+        bits_sum += tensor_bits(projection)
+        dist.all_reduce(projection, group=group)
+        projection /= world_size
+        norms = projection ** 2
+        if tensor.dim() != 1:
+            norms = torch.sum(norms, dim=1)
+        selected = torch.topk(norms, k=k // width, largest=True, sorted=False).indices
+        values = rows.index_select(0, selected)
+        values_memory[value_offset:value_offset+k].copy_(values.flatten())
+        indices_memory[row_offset:row_offset+selected.numel()].copy_(selected)
+        bits_sum += tensor_bits(values)
+        if use_error_feedback == "ef14":
+            rows.index_fill_(0, selected, 0)
+        elif use_error_feedback == "ef21":
+            rows.zero_()
+            rows.index_copy_(0, selected, values)
+        value_offset += k
+        row_offset += selected.numel()
+    return values_memory, indices_memory, bits_sum
+
+
+def decompress_rows(tensors, k_list, values_memory, indices_memory):
+    value_offset = row_offset = 0
+    for tensor, k in zip(tensors, k_list):
+        rows = _row_view(tensor)
+        count = k // rows.shape[1]
+        selected = indices_memory[row_offset:row_offset+count]
+        rows.index_copy_(0, selected, values_memory[value_offset:value_offset+k].view(count, -1))
+        value_offset += k
+        row_offset += count
+
+
+def compress_fused_rows(tensors, k_list, values_memory, indices_memory,
+                        compress_ratio, r, group, use_error_feedback):
+    from comm_hooks.arc_row_kernels import gather_rows_and_erase
+    selected_rows = []
+    offset = bits_sum = 0
+    world_size = dist.get_world_size(group)
+    for tensor, k in zip(tensors, k_list):
+        rows = _row_view(tensor)
+        width = rows.shape[1]
+        if tensor.dim() == 1:
+            projection = tensor.clone()
+        else:
+            v = torch.randn(width, r, device=tensor.device, dtype=tensor.dtype)
+            projection = rows @ v
+        bits_sum += tensor_bits(projection)
+        dist.all_reduce(projection, group=group)
+        projection /= world_size
+        norms = projection ** 2
+        if tensor.dim() != 1:
+            norms = torch.sum(norms, dim=1)
+        selected = torch.topk(norms, k=k // width, largest=True, sorted=False).indices
+        gather_rows_and_erase[((k + 255) // 256,)](
+            rows, selected, values_memory, k, offset, WIDTH=width,
+            ERASE=use_error_feedback == "ef14", BLOCK=256)
+        selected_rows.append(selected)
+        bits_sum += k * tensor.element_size() * 8
+        offset += k
+    return values_memory, selected_rows, bits_sum
+
+
+
+def compress_pipeline_rows(tensors, k_list, values_memory, indices_memory,
+                           compress_ratio, r, group, use_error_feedback):
+    from comm_hooks.arc_row_kernels import gather_rows_and_erase
+    pending = []
+    bits_sum = 0
+    # Keep RNG/GEMM and collective enqueue order unchanged. Disjoint gradient
+    # views allow later projections to run before earlier rows are cleared.
+    for tensor, k in zip(tensors, k_list):
+        rows = _row_view(tensor)
+        if tensor.dim() == 1:
+            projection = tensor.clone()
+        else:
+            v = torch.randn(rows.shape[1], r, device=tensor.device, dtype=tensor.dtype)
+            projection = rows @ v
+        bits_sum += tensor_bits(projection) + k * tensor.element_size() * 8
+        work = dist.all_reduce(projection, group=group, async_op=True)
+        pending.append((tensor.dim(), rows, k, projection, work))
+    selected_rows = []
+    offset = 0
+    world_size = dist.get_world_size(group)
+    for ndim, rows, k, projection, work in pending:
+        work.wait()
+        projection /= world_size
+        norms = projection ** 2
+        if ndim != 1:
+            norms = torch.sum(norms, dim=1)
+        width = rows.shape[1]
+        selected = torch.topk(norms, k=k // width, largest=True, sorted=False).indices
+        gather_rows_and_erase[((k + 255) // 256,)](
+            rows, selected, values_memory, k, offset, WIDTH=width,
+            ERASE=use_error_feedback == "ef14", BLOCK=256)
+        selected_rows.append(selected)
+        offset += k
+    return values_memory, selected_rows, bits_sum
+
+def decompress_fused_rows(tensors, k_list, values_memory, indices_memory):
+    from comm_hooks.arc_row_kernels import scatter_rows
+    offset = 0
+    for tensor, k, selected in zip(tensors, k_list, indices_memory):
+        rows = _row_view(tensor)
+        scatter_rows[((k + 255) // 256,)](
+            rows, selected, values_memory, k, offset, WIDTH=rows.shape[1], BLOCK=256)
+        offset += k
+
 class GroupTopKState(HookState):
     def __init__(self, 
         process_group: dist.ProcessGroup, 
@@ -149,9 +280,13 @@ class GroupTopKState(HookState):
         start_compress_iter: int = 2, 
         use_error_feedback="noef", 
         seed=0, 
-        error_decay=1.0
+        error_decay=1.0,
+        implementation="fused",
     ):
         super().__init__(process_group)
+        if implementation not in ("reference", "optimized", "fused", "pipeline"):
+            raise ValueError(implementation)
+        self.implementation = implementation
         self.r = r
         self.compress_ratio = compress_ratio
 
@@ -258,8 +393,13 @@ def group_topk_hook(
     sum_k = sum(k_list) 
 
     values_memory = torch.empty(sum_k, dtype=dtype, device=device) 
-    indices_memory = torch.empty(sum_k, dtype=torch.int, device=device)
-    _, _, bits_sum = compress_tensor_to_memory(tensors=tensors, k_list=k_list, values_memory=values_memory, indices_memory=indices_memory, compress_ratio=state.compress_ratio, r=state.r, group=group_to_use, use_error_feedback=state.use_error_feedback)
+    optimized = state.implementation != "reference"
+    # EF21 keeps the already verified row path; its local reconstruction differs.
+    fused = state.implementation in ("fused", "pipeline") and state.use_error_feedback != "ef21" and input_tensor.is_cuda
+    index_count = sum(k // _row_view(t).shape[1] for t, k in zip(tensors, k_list)) if optimized else sum_k
+    indices_memory = None if fused else torch.empty(index_count, dtype=torch.int64 if optimized else torch.int, device=device)
+    compress = (compress_pipeline_rows if state.implementation == "pipeline" else compress_fused_rows) if fused else (compress_rows if optimized else compress_tensor_to_memory)
+    _, indices_memory, bits_sum = compress(tensors=tensors, k_list=k_list, values_memory=values_memory, indices_memory=indices_memory, compress_ratio=state.compress_ratio, r=state.r, group=group_to_use, use_error_feedback=state.use_error_feedback)
 
    
 
@@ -277,7 +417,8 @@ def group_topk_hook(
 
     # Zero the input tensor.
     input_tensor.zero_() 
-    decompress_memory_to_tensor_and_aggregate(tensors=tensors, k_list=k_list, values_memory=values_memory, indices_memory=indices_memory)
+    decompress = decompress_fused_rows if fused else (decompress_rows if optimized else decompress_memory_to_tensor_and_aggregate)
+    decompress(tensors=tensors, k_list=k_list, values_memory=values_memory, indices_memory=indices_memory)
 
     if state.use_error_feedback == "ef21":
         state.global_error_dict[bucket_index].add_(input_tensor) # \overline{E_i} = \overline{E_{i-1}} + \overline{C[\nabla F_i - E_{i-1}]}

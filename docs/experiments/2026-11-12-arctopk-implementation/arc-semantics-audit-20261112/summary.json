@@ -1,0 +1,238 @@
+{
+  "status": "passed",
+  "rank_results": [
+    {
+      "status": "passed",
+      "rank": 0,
+      "elapsed_seconds": 41.992,
+      "configurations": 158,
+      "bucket_comparisons": 2844,
+      "checkpoint_restores": 632,
+      "collective_comparisons": 9516,
+      "reference_ast_unchanged": [
+        "group_topk_project_and_select",
+        "compress_tensor_to_memory",
+        "decompress_memory_to_tensor_and_aggregate",
+        "cal_k",
+        "HookState.state_dict",
+        "HookState.load_state_dict"
+      ],
+      "comparisons": "uint8 bitwise output/state/RNG/projection draws/projection pre-post AllReduce/norms/TopK values and indices/packed payloads",
+      "dtypes": [
+        "float32",
+        "bfloat16",
+        "float16",
+        "float64"
+      ],
+      "world_sizes": [
+        4,
+        2,
+        3
+      ],
+      "patterns": [
+        "random",
+        "zeros",
+        "ties",
+        "signedzero"
+      ],
+      "checkpoint_cross_implementation": true,
+      "nondefault_stream": true,
+      "torch_version": "2.7.1+cu126",
+      "gpu": "NVIDIA GeForce RTX 4090",
+      "source_sha256": {
+        "comm_hooks/group_topk_hook_no_reshape.py": "931e946f936496075a79ea9b1c779c62ea818dc4aac8218edecd6d24aa37d993",
+        "comm_hooks/arc_row_kernels.py": "9ebdcbb2076fe45f37dd0075b838a2dc13f88ff8761ea0b6b943e3fb9b60c01e",
+        "comm_hooks/utils.py": "205019c0ddefbf561726ec6d14be431a192ca05e87abace3da36f2525615058e",
+        "c4/scripts/audit_arc_semantics.py": "a671db727765224709376df61b038e733b9ee1577a58c36962a3e08dadd8c0e1"
+      }
+    },
+    {
+      "status": "passed",
+      "rank": 1,
+      "elapsed_seconds": 41.982,
+      "configurations": 158,
+      "bucket_comparisons": 2844,
+      "checkpoint_restores": 632,
+      "collective_comparisons": 9516,
+      "reference_ast_unchanged": [
+        "group_topk_project_and_select",
+        "compress_tensor_to_memory",
+        "decompress_memory_to_tensor_and_aggregate",
+        "cal_k",
+        "HookState.state_dict",
+        "HookState.load_state_dict"
+      ],
+      "comparisons": "uint8 bitwise output/state/RNG/projection draws/projection pre-post AllReduce/norms/TopK values and indices/packed payloads",
+      "dtypes": [
+        "float32",
+        "bfloat16",
+        "float16",
+        "float64"
+      ],
+      "world_sizes": [
+        4,
+        2,
+        3
+      ],
+      "patterns": [
+        "random",
+        "zeros",
+        "ties",
+        "signedzero"
+      ],
+      "checkpoint_cross_implementation": true,
+      "nondefault_stream": true,
+      "torch_version": "2.7.1+cu126",
+      "gpu": "NVIDIA GeForce RTX 4090",
+      "source_sha256": {
+        "comm_hooks/group_topk_hook_no_reshape.py": "931e946f936496075a79ea9b1c779c62ea818dc4aac8218edecd6d24aa37d993",
+        "comm_hooks/arc_row_kernels.py": "9ebdcbb2076fe45f37dd0075b838a2dc13f88ff8761ea0b6b943e3fb9b60c01e",
+        "comm_hooks/utils.py": "205019c0ddefbf561726ec6d14be431a192ca05e87abace3da36f2525615058e",
+        "c4/scripts/audit_arc_semantics.py": "a671db727765224709376df61b038e733b9ee1577a58c36962a3e08dadd8c0e1"
+      }
+    },
+    {
+      "status": "passed",
+      "rank": 2,
+      "elapsed_seconds": 41.97,
+      "configurations": 158,
+      "bucket_comparisons": 2844,
+      "checkpoint_restores": 632,
+      "collective_comparisons": 9516,
+      "reference_ast_unchanged": [
+        "group_topk_project_and_select",
+        "compress_tensor_to_memory",
+        "decompress_memory_to_tensor_and_aggregate",
+        "cal_k",
+        "HookState.state_dict",
+        "HookState.load_state_dict"
+      ],
+      "comparisons": "uint8 bitwise output/state/RNG/projection draws/projection pre-post AllReduce/norms/TopK values and indices/packed payloads",
+      "dtypes": [
+        "float32",
+        "bfloat16",
+        "float16",
+        "float64"
+      ],
+      "world_sizes": [
+        4,
+        2,
+        3
+      ],
+      "patterns": [
+        "random",
+        "zeros",
+        "ties",
+        "signedzero"
+      ],
+      "checkpoint_cross_implementation": true,
+      "nondefault_stream": true,
+      "torch_version": "2.7.1+cu126",
+      "gpu": "NVIDIA GeForce RTX 4090",
+      "source_sha256": {
+        "comm_hooks/group_topk_hook_no_reshape.py": "931e946f936496075a79ea9b1c779c62ea818dc4aac8218edecd6d24aa37d993",
+        "comm_hooks/arc_row_kernels.py": "9ebdcbb2076fe45f37dd0075b838a2dc13f88ff8761ea0b6b943e3fb9b60c01e",
+        "comm_hooks/utils.py": "205019c0ddefbf561726ec6d14be431a192ca05e87abace3da36f2525615058e",
+        "c4/scripts/audit_arc_semantics.py": "a671db727765224709376df61b038e733b9ee1577a58c36962a3e08dadd8c0e1"
+      }
+    },
+    {
+      "status": "passed",
+      "rank": 3,
+      "elapsed_seconds": 41.975,
+      "configurations": 158,
+      "bucket_comparisons": 2844,
+      "checkpoint_restores": 632,
+      "collective_comparisons": 9516,
+      "reference_ast_unchanged": [
+        "group_topk_project_and_select",
+        "compress_tensor_to_memory",
+        "decompress_memory_to_tensor_and_aggregate",
+        "cal_k",
+        "HookState.state_dict",
+        "HookState.load_state_dict"
+      ],
+      "comparisons": "uint8 bitwise output/state/RNG/projection draws/projection pre-post AllReduce/norms/TopK values and indices/packed payloads",
+      "dtypes": [
+        "float32",
+        "bfloat16",
+        "float16",
+        "float64"
+      ],
+      "world_sizes": [
+        4,
+        2,
+        1
+      ],
+      "patterns": [
+        "random",
+        "zeros",
+        "ties",
+        "signedzero"
+      ],
+      "checkpoint_cross_implementation": true,
+      "nondefault_stream": true,
+      "torch_version": "2.7.1+cu126",
+      "gpu": "NVIDIA GeForce RTX 4090",
+      "source_sha256": {
+        "comm_hooks/group_topk_hook_no_reshape.py": "931e946f936496075a79ea9b1c779c62ea818dc4aac8218edecd6d24aa37d993",
+        "comm_hooks/arc_row_kernels.py": "9ebdcbb2076fe45f37dd0075b838a2dc13f88ff8761ea0b6b943e3fb9b60c01e",
+        "comm_hooks/utils.py": "205019c0ddefbf561726ec6d14be431a192ca05e87abace3da36f2525615058e",
+        "c4/scripts/audit_arc_semantics.py": "a671db727765224709376df61b038e733b9ee1577a58c36962a3e08dadd8c0e1"
+      }
+    }
+  ],
+  "formal_checks": [
+    {
+      "model": "60m",
+      "profile": false,
+      "updates": 100,
+      "loss_and_bits_exact": true,
+      "current_source_hash_match": true
+    },
+    {
+      "model": "60m",
+      "profile": true,
+      "updates": 10,
+      "loss_and_bits_exact": true,
+      "current_source_hash_match": true
+    },
+    {
+      "model": "130m",
+      "profile": false,
+      "updates": 100,
+      "loss_and_bits_exact": true,
+      "current_source_hash_match": true
+    },
+    {
+      "model": "130m",
+      "profile": true,
+      "updates": 10,
+      "loss_and_bits_exact": true,
+      "current_source_hash_match": true
+    },
+    {
+      "model": "350m",
+      "profile": false,
+      "updates": 100,
+      "loss_and_bits_exact": true,
+      "current_source_hash_match": true
+    },
+    {
+      "model": "350m",
+      "profile": true,
+      "updates": 10,
+      "loss_and_bits_exact": true,
+      "current_source_hash_match": true
+    }
+  ],
+  "bucket_comparisons_total": 11376,
+  "collective_comparisons_total": 38064,
+  "checkpoint_restores_total": 2528,
+  "world_sizes": [
+    1,
+    2,
+    3,
+    4
+  ]
+}

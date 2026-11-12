@@ -1,0 +1,7 @@
+{
+  "comm_hooks/group_topk_hook_no_reshape.py": "4dad2d373fcb6abf2adc4280145f33794844c464eca860a36765874274a2e0e0",
+  "comm_hooks/utils.py": "9c8b0ff8acf08d829f8000267e16765166d95e26e77c173039715d230360de23",
+  "c4/table_v_timing.py": "63fb65835ac9d52caa54f084842b0a97d44b35c41993716874a367eeb39c83ea",
+  "c4/scripts/profile_arc_collectives.py": "335ed9d48cd1af0d06f45895b7e035d2170d939f5318409684adb9294980a0d3",
+  "c4/scripts/run_arc_rows_ab.py": "82d7d811abafe89712b02d560532ff2facbc9b6541039d0410484162ddd47488"
+}

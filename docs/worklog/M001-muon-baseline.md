@@ -179,3 +179,77 @@ checkpoint，只有显式设置 `--save_every > 0` 时才启用周期保存。
   wall-time 均值。完整设置、四方法对照和来源链接见 [results](../results.md)。
 - 结果为单次、单 seed 的探索性 timing；1B 与前三种模型 dtype/seq 不同，不能直接
   用跨模型斜率归因于参数规模。
+
+## 2026-11-12：CM302–CM319 Dense同条件补测启动
+
+新增Dense基线18臂：60M/130M/350M，各3次独立进程重复，50+100无profiler timing与50+10独立profiling。GPU0–3空闲门禁和运行中进程树检查沿用CM266–CM301；每臂完成即gzip压缩trace。其余配置对齐本轮ARC，最终汇总核对配置与源码哈希。队列tmux dense_arc_control，产物output/CM302-CM319-dense-arc-control。参考与优化ARC复用紧接此前完成的数据，不宣称批次间随机配对。
+
+## 2026-11-12：CM302–CM319 Dense同条件补测完成
+
+# Dense 与原版/优化版 ARC-TopK 对照
+
+4张空闲RTX4090，FP32，seq256，每卡batch1，Muon，SHM默认channel，禁用P2P，单bucket8192MiB，严格阻塞。各配置3次独立进程重复，固定seed1243。
+
+单位ms/update；均值 ± 样本标准差。降低比例使用均值之比；正值表示比Dense更快。
+
+| 模型 | 指标 | Dense | ARC 原版 | ARC 优化版 | 原版相对Dense降低 | 优化版相对Dense降低 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 60m | NCCL AllReduce kernel | 23.635 ± 0.408 | 36.549 ± 4.050 | 39.506 ± 1.353 | -54.64% | -67.15% |
+| 60m | 完整梯度hook | 24.897 ± 1.212 | 38.172 ± 0.883 | 28.131 ± 0.387 | -53.32% | -12.99% |
+| 60m | 完整训练单步 | 60.039 ± 0.966 | 72.646 ± 1.459 | 63.267 ± 1.047 | -21.00% | -5.38% |
+| 130m | NCCL AllReduce kernel | 52.228 ± 0.839 | 47.883 ± 1.672 | 54.575 ± 2.160 | 8.32% | -4.49% |
+| 130m | 完整梯度hook | 52.689 ± 0.431 | 61.150 ± 0.725 | 43.752 ± 0.464 | -16.06% | 16.96% |
+| 130m | 完整训练单步 | 116.132 ± 0.582 | 125.803 ± 1.483 | 108.921 ± 1.256 | -8.33% | 6.21% |
+| 350m | NCCL AllReduce kernel | 136.668 ± 2.293 | 115.391 ± 6.389 | 105.996 ± 3.650 | 15.57% | 22.44% |
+| 350m | 完整梯度hook | 139.909 ± 0.691 | 131.077 ± 0.358 | 93.583 ± 0.584 | 6.31% | 33.11% |
+| 350m | 完整训练单步 | 299.544 ± 2.236 | 289.984 ± 1.458 | 254.668 ± 1.746 | 3.19% | 14.98% |
+
+Dense新测CM302–CM319；ARC使用紧接此前完成的CM266–CM301。已逐臂核对模型、精度、batch、窗口、GPU数、优化器、NCCL环境和关键源码哈希一致。两个实验批次没有交错随机化，比例是独立批次均值比较，未做显著性检验。
+
+单步与hook为无profiler的50步预热+100步测量。纯通信来自独立profiler的50步预热+10步测量：各rank NCCL AllReduce kernel总时长/10，取最慢rank，排除barrier和Muon AllGather；包含NCCL协议等待，非物理wire time。不能与无profiler的hook直接相减。
+
+Dense与ARC是不同训练算法路径，不要求loss相等；ARC在Muon正交化前压缩梯度，属于近似Muon。原版与优化版ARC的loss、bits、通信payload布局已确认完全一致。
+
+这些结果属于严格阻塞系统诊断，不能直接外推正常异步DDP吞吐或收敛质量。代码尚未提交；原始trace均无损gzip保存。
+
+## 2026-11-12：CM328–CM343 60M/130M融合版补测启动
+
+沿用原4卡FP32/seq256/default-channel SHM严格阻塞setting，60M和130M各对比Dense/reference/optimized/fused，每臂一次无profiler timing（50+100）与独立通信profiling（50+10），seed1243。无算法改动，沿用空闲卡等待和外部GPU进程干扰拒绝机制。队列tmux arc_fused_small；产物output/CM328-CM343-fused-small-models，含实际源码snapshot和hash，原始trace逐臂gzip压缩。
+
+## 2026-11-12：CM328–CM343 60M/130M融合版补测完成
+
+# 60M / 130M：融合 ARC-TopK 原 setting 补测
+
+4张空闲RTX4090，FP32，seq256，每卡batch1，Muon，EF14，保留比例0.2、r4，SHM默认channel、禁用P2P、单bucket8192MiB、严格阻塞。各版本一次，seed1243。
+
+| 模型 | 实现 | NCCL AllReduce kernel ms/步 | 完整 hook ms/步 | 完整单步 ms/步 |
+| --- | --- | ---: | ---: | ---: |
+| 60m | dense | 22.742 | 24.636 | 59.362 |
+| 60m | reference | 40.211 | 38.952 | 76.610 |
+| 60m | optimized | 38.531 | 27.467 | 64.486 |
+| 60m | fused | 32.378 | 25.546 | 62.065 |
+| 130m | dense | 52.321 | 52.766 | 118.204 |
+| 130m | reference | 43.229 | 59.660 | 121.947 |
+| 130m | optimized | 56.270 | 42.831 | 105.731 |
+| 130m | fused | 49.279 | 40.347 | 104.243 |
+
+| 模型 | fused对比基线 | hook耗时降低 | 完整单步耗时降低 |
+| --- | --- | ---: | ---: |
+| 60m | dense | -3.69% | -4.55% |
+| 60m | reference | 34.42% | 18.99% |
+| 60m | optimized | 6.99% | 3.75% |
+| 130m | dense | 23.54% | 11.81% |
+| 130m | reference | 32.37% | 14.52% |
+| 130m | optimized | 5.80% | 1.41% |
+
+每个模型中reference/optimized/fused在两种窗口的逐rank loss序列、DDP bits和逐次AllReduce payload尺寸/dtype布局完全一致。Dense与压缩Muon不是同一算法路径，不要求loss相同。
+
+单步与hook：无profiler，50步预热+100步测量，第41步起启用压缩。纯通信：独立profiler，50步预热+10步测量；最慢rank的NCCL AllReduce kernel累计时长/10，排除barrier和Muon AllGather。含协议等待与profiling扰动，非wire time，不能与无profiler hook直接相减。
+
+全部正式臂启动前检查4卡无GPU compute进程且空闲显存>=23000MiB，空闲不足由脚本等待；运行中监测外部GPU进程，干扰结果拒绝接受。原始trace无损gzip保留，实际源码snapshot与哈希保留。
+
+本轮每项一次，没有估计独立重复波动或统计显著性；严格阻塞结果不外推正常异步DDP吞吐或收敛。模型、seq、精度、压缩比例、NCCL设置均未为追求收益而改变。
+
+首轮在进程退出阶段触发rank3归属误报，NCCL日志证实是自有rank；该次试运行完整保存在output/CM328-CM343-fused-small-models-rejected-monitor-attempt1，不纳入数字。监测器已缓存运行中确认的子进程身份，正式重跑前重新检查四卡空闲。
+
+实验CM328–CM343；未修改算法实现，仅新增补测和汇总脚本；代码未提交。

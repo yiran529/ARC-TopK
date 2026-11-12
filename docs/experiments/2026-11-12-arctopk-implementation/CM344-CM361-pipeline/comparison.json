@@ -1,0 +1,74 @@
+{
+  "60m": {
+    "dense": {
+      "collective_ms": 25.642694299999995,
+      "hook_ms": 26.331782727502286,
+      "iteration_ms": 61.83192888274789,
+      "peak_allocated_mib": 1223.44189453125,
+      "pipeline_reduction_hook_ms": 9.766703250234354,
+      "pipeline_reduction_iteration_ms": 5.870832915803903
+    },
+    "fused": {
+      "collective_ms": 33.37818300000002,
+      "hook_ms": 25.2877832762897,
+      "iteration_ms": 60.204134988598526,
+      "peak_allocated_mib": 1445.44189453125,
+      "pipeline_reduction_hook_ms": 6.041445434687331,
+      "pipeline_reduction_iteration_ms": 3.3257771074273412
+    },
+    "pipeline": {
+      "collective_ms": 34.73892069999991,
+      "hook_ms": 23.76003564801067,
+      "iteration_ms": 58.20187964942306,
+      "peak_allocated_mib": 1445.44189453125
+    }
+  },
+  "130m": {
+    "dense": {
+      "collective_ms": 52.201856500000005,
+      "hook_ms": 54.852247508242726,
+      "iteration_ms": 118.1710357312113,
+      "peak_allocated_mib": 2880.10400390625,
+      "pipeline_reduction_hook_ms": 23.061710476460796,
+      "pipeline_reduction_iteration_ms": 10.17073554146325
+    },
+    "fused": {
+      "collective_ms": 54.271649600000366,
+      "hook_ms": 41.94325099699199,
+      "iteration_ms": 105.87927543092519,
+      "peak_allocated_mib": 3392.10400390625,
+      "pipeline_reduction_hook_ms": -0.6178109586371772,
+      "pipeline_reduction_iteration_ms": -0.2577433292265008
+    },
+    "pipeline": {
+      "collective_ms": 43.89556649999999,
+      "hook_ms": 42.20238099806011,
+      "iteration_ms": 106.15217220038176,
+      "peak_allocated_mib": 3392.10400390625
+    }
+  },
+  "350m": {
+    "dense": {
+      "collective_ms": 140.3372548,
+      "hook_ms": 140.2188946120441,
+      "iteration_ms": 300.05172049161047,
+      "peak_allocated_mib": 8093.39501953125,
+      "pipeline_reduction_hook_ms": 41.79724914361793,
+      "pipeline_reduction_iteration_ms": 19.61793195717202
+    },
+    "fused": {
+      "collective_ms": 88.3673385999983,
+      "hook_ms": 90.08721372112632,
+      "iteration_ms": 252.5419289199635,
+      "peak_allocated_mib": 9497.39501953125,
+      "pipeline_reduction_hook_ms": 9.4086158139417,
+      "pipeline_reduction_iteration_ms": 4.495946807438678
+    },
+    "pipeline": {
+      "collective_ms": 76.86132029999968,
+      "hook_ms": 81.61125388462096,
+      "iteration_ms": 241.18777812924236,
+      "peak_allocated_mib": 9497.39501953125
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "60m": {
+    "dense": {
+      "collective_ms": 22.741666700000003,
+      "hook_ms": 24.636328271590173,
+      "iteration_ms": 59.36169952619821,
+      "fused_reduction_collective_ms": -42.374536251557956,
+      "fused_reduction_hook_ms": -3.692586890410987,
+      "fused_reduction_iteration_ms": -4.553115796082752
+    },
+    "reference": {
+      "collective_ms": 40.211153100000026,
+      "hook_ms": 38.95151493139565,
+      "iteration_ms": 76.60979573614895,
+      "fused_reduction_collective_ms": 19.479199167755358,
+      "fused_reduction_hook_ms": 34.415782942924935,
+      "fused_reduction_iteration_ms": 18.986200331476567
+    },
+    "optimized": {
+      "collective_ms": 38.53078360000002,
+      "hook_ms": 27.46664867270738,
+      "iteration_ms": 64.48554570786655,
+      "fused_reduction_collective_ms": 15.967599215916362,
+      "fused_reduction_hook_ms": 6.992489677090763,
+      "fused_reduction_iteration_ms": 3.754390595817647
+    },
+    "fused": {
+      "collective_ms": 32.37834249999999,
+      "hook_ms": 25.546046099625528,
+      "iteration_ms": 62.06450644414872
+    }
+  },
+  "130m": {
+    "dense": {
+      "collective_ms": 52.321300199999996,
+      "hook_ms": 52.76588953100145,
+      "iteration_ms": 118.20406122598797,
+      "fused_reduction_collective_ms": 5.814106660904317,
+      "fused_reduction_hook_ms": 23.53640940306816,
+      "fused_reduction_iteration_ms": 11.81110603565495
+    },
+    "reference": {
+      "collective_ms": 43.22894349999999,
+      "hook_ms": 59.65959652327001,
+      "iteration_ms": 121.9467648724094,
+      "fused_reduction_collective_ms": -13.996040638837414,
+      "fused_reduction_hook_ms": 32.371829350074165,
+      "fused_reduction_iteration_ms": 14.517737042714195
+    },
+    "optimized": {
+      "collective_ms": 56.270467799999935,
+      "hook_ms": 42.83141451422125,
+      "iteration_ms": 105.73149067349732,
+      "fused_reduction_collective_ms": 12.424250363171652,
+      "fused_reduction_hook_ms": 5.801164394376912,
+      "fused_reduction_iteration_ms": 1.407940480058345
+    },
+    "fused": {
+      "collective_ms": 49.279284000000054,
+      "hook_ms": 40.346693745814264,
+      "iteration_ms": 104.24285421613604
+    }
+  }
+}

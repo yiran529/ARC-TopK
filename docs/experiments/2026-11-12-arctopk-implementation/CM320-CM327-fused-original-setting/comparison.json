@@ -1,0 +1,30 @@
+{
+  "dense": {
+    "collective_ms": 137.40812139999997,
+    "hook_ms": 141.16302830167115,
+    "iteration_ms": 300.38930200971663,
+    "fused_reduction_hook_ms": 38.30209918899135,
+    "fused_reduction_iteration_ms": 16.87056891315678
+  },
+  "reference": {
+    "collective_ms": 104.83890259999994,
+    "hook_ms": 129.99380285851657,
+    "iteration_ms": 290.2084620203823,
+    "fused_reduction_hook_ms": 33.000940607781345,
+    "fused_reduction_iteration_ms": 13.954294761784492
+  },
+  "optimized": {
+    "collective_ms": 101.69241380000012,
+    "hook_ms": 91.50397171732038,
+    "iteration_ms": 252.0372250676155,
+    "fused_reduction_hook_ms": 4.818748794381145,
+    "fused_reduction_iteration_ms": 0.9226046908645924
+  },
+  "fused": {
+    "collective_ms": 92.7588135999998,
+    "hook_ms": 87.09462518338114,
+    "iteration_ms": 249.71191780641675
+  },
+  "target_met_vs_reference": true,
+  "target_met_vs_dense": true
+}

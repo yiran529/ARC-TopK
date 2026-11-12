@@ -1,0 +1,212 @@
+[
+  {
+    "source": "output/CM266-CM301-arc-rows-ab/comparison.md",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM266-CM301-arc-rows-ab/comparison.md",
+    "bytes": 2603,
+    "sha256": "21d967ad68c4aa5d9db8d26a961a4262f09f28f04af894711170be2152aa6a73"
+  },
+  {
+    "source": "output/CM266-CM301-arc-rows-ab/comparison.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM266-CM301-arc-rows-ab/comparison.json",
+    "bytes": 5281,
+    "sha256": "6c3f14a1a4bc0e0ecb89b8e1fda07c8eeb35a3347a5cacff438e5bf5104db0cf"
+  },
+  {
+    "source": "output/CM266-CM301-arc-rows-ab/manifest.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM266-CM301-arc-rows-ab/manifest.json",
+    "bytes": 56744,
+    "sha256": "d323e85cea3484b3cce0eb1bdc0ac35d331e2eef56bec5da1950b590fa05600e"
+  },
+  {
+    "source": "output/CM266-CM301-arc-rows-ab/sources.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM266-CM301-arc-rows-ab/sources.json",
+    "bytes": 517,
+    "sha256": "c8e362cdf33d247cc9e43f54e818a8f0bb6febb856c0174358e3c7dc9844dd80"
+  },
+  {
+    "source": "output/CM266-CM301-arc-rows-ab/analysis-sources.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM266-CM301-arc-rows-ab/analysis-sources.json",
+    "bytes": 222,
+    "sha256": "964181ca5f4369db0f23c57fd7cb7997ab23fd30b536b22983f48cd7a0114a9f"
+  },
+  {
+    "source": "output/CM266-CM301-arc-rows-ab/removed-large-traces.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM266-CM301-arc-rows-ab/removed-large-traces.json",
+    "bytes": 14677,
+    "sha256": "00300d74c1581839faeb8c2675b5e7413ef3ad1150676f2d00b09b1fca710bfe"
+  },
+  {
+    "source": "output/CM302-CM319-dense-arc-control/comparison.md",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM302-CM319-dense-arc-control/comparison.md",
+    "bytes": 2552,
+    "sha256": "9e9f6e2b7d8004a66953911c41ba619c5eda839dc88d88931c6a5f1f9c53dbf6"
+  },
+  {
+    "source": "output/CM302-CM319-dense-arc-control/comparison.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM302-CM319-dense-arc-control/comparison.json",
+    "bytes": 8139,
+    "sha256": "409781027550e620ff231175b96b473422808e07861cbcf2bcb013c9693baf23"
+  },
+  {
+    "source": "output/CM302-CM319-dense-arc-control/manifest.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM302-CM319-dense-arc-control/manifest.json",
+    "bytes": 26969,
+    "sha256": "8d57faa369e69bae99606f24b1bcd04933316bbd942da4ba0e8f034141d08601"
+  },
+  {
+    "source": "output/CM302-CM319-dense-arc-control/sources.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM302-CM319-dense-arc-control/sources.json",
+    "bytes": 624,
+    "sha256": "a2fa3bce0d3b8df2169aae3d7d4d2f727b7154f26a30de983e3f2b6fd7cfa70d"
+  },
+  {
+    "source": "output/CM302-CM319-dense-arc-control/analysis-sources.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM302-CM319-dense-arc-control/analysis-sources.json",
+    "bytes": 282,
+    "sha256": "395e3bd038903299effcfbcf93756a390185a7b418da63f8125efe735e10843b"
+  },
+  {
+    "source": "output/CM302-CM319-dense-arc-control/removed-large-traces.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM302-CM319-dense-arc-control/removed-large-traces.json",
+    "bytes": 7249,
+    "sha256": "b9de8bb724d1c8a7cb65c84ecd58d4e614d51d88d9a3fe5105e2c9c7a9039281"
+  },
+  {
+    "source": "output/CM320-CM327-fused-original-setting/comparison.md",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM320-CM327-fused-original-setting/comparison.md",
+    "bytes": 2561,
+    "sha256": "43e70042fcda629a36a794e7fd22f99ca5a282e15e902a99e9ba7e0ccb0efc2d"
+  },
+  {
+    "source": "output/CM320-CM327-fused-original-setting/comparison.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM320-CM327-fused-original-setting/comparison.json",
+    "bytes": 920,
+    "sha256": "8be7acd6e86743007cab17668c34bd1da07170d0d524476efe99651c346f741f"
+  },
+  {
+    "source": "output/CM320-CM327-fused-original-setting/manifest.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM320-CM327-fused-original-setting/manifest.json",
+    "bytes": 12510,
+    "sha256": "f37059ca033fd6c44c0ff1b59ccb40d4be38765ccd47c9f1477bacc578dfafb7"
+  },
+  {
+    "source": "output/CM320-CM327-fused-original-setting/sources.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM320-CM327-fused-original-setting/sources.json",
+    "bytes": 722,
+    "sha256": "08caf63ff5ac4cb998efc91c7a736f5e3521f30c1995e1ed11b19088dec6ab1e"
+  },
+  {
+    "source": "output/CM320-CM327-fused-original-setting/delivered-source-sha256.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM320-CM327-fused-original-setting/delivered-source-sha256.json",
+    "bytes": 722,
+    "sha256": "c2d28194f35e1afe6942d685d390234977bc6966dd1fcd9ea073d5e4e3a986f9"
+  },
+  {
+    "source": "output/CM320-CM327-fused-original-setting/removed-large-traces.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM320-CM327-fused-original-setting/removed-large-traces.json",
+    "bytes": 3337,
+    "sha256": "11ba2b32d6b9824d63c3b19b3848826d00e782d3d2f6e92f6442f7eab351370d"
+  },
+  {
+    "source": "output/CM328-CM343-fused-small-models/comparison.md",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM328-CM343-fused-small-models/comparison.md",
+    "bytes": 2625,
+    "sha256": "3fb35b1d03d5794db96f461033292975fb4eb5947c663600d7c58e89e2e5b739"
+  },
+  {
+    "source": "output/CM328-CM343-fused-small-models/comparison.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM328-CM343-fused-small-models/comparison.json",
+    "bytes": 2195,
+    "sha256": "bfccf23f9aa7b11f7c12028bef126db7a501f741d3a50603eae541eef31a7ae9"
+  },
+  {
+    "source": "output/CM328-CM343-fused-small-models/manifest.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM328-CM343-fused-small-models/manifest.json",
+    "bytes": 24922,
+    "sha256": "62625f78b2b484748ac9cfab6e30f6fcae9812c0901e58632cce42b8fe665cd4"
+  },
+  {
+    "source": "output/CM328-CM343-fused-small-models/sources.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM328-CM343-fused-small-models/sources.json",
+    "bytes": 725,
+    "sha256": "86d4a51749273a7af218b75c5864985b887071e00b77cecd127592f5a32cbb32"
+  },
+  {
+    "source": "output/CM328-CM343-fused-small-models/analysis-sources.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM328-CM343-fused-small-models/analysis-sources.json",
+    "bytes": 280,
+    "sha256": "deacb9c62e404d7158a2da4cb4f8b92dff231dfed5d9feda2566734defeb5238"
+  },
+  {
+    "source": "output/CM328-CM343-fused-small-models/removed-large-traces.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM328-CM343-fused-small-models/removed-large-traces.json",
+    "bytes": 6509,
+    "sha256": "dccdb125cd9c9dc467ebde65ba58e0b833f54406b3454547d74445d386eb9c1d"
+  },
+  {
+    "source": "output/CM344-CM361-pipeline/comparison.md",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM344-CM361-pipeline/comparison.md",
+    "bytes": 3139,
+    "sha256": "cf25952d85ac875ccc6037cdac7cc614696f6e29d89b066b15e2a70cda769488"
+  },
+  {
+    "source": "output/CM344-CM361-pipeline/comparison.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM344-CM361-pipeline/comparison.json",
+    "bytes": 2428,
+    "sha256": "e79eae9dfed04ac11b137cb00b506fdd0f8b1e2b7a658c64a80d664792728258"
+  },
+  {
+    "source": "output/CM344-CM361-pipeline/manifest.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM344-CM361-pipeline/manifest.json",
+    "bytes": 27659,
+    "sha256": "d16eae407903fd129228db4431e0d0ffe2e406d77c99cc6128070ec73823ec07"
+  },
+  {
+    "source": "output/CM344-CM361-pipeline/sources.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM344-CM361-pipeline/sources.json",
+    "bytes": 718,
+    "sha256": "85d81a41b9c13934a8a71babce64cb8018266f5e1ef680df7a61813798911236"
+  },
+  {
+    "source": "output/CM344-CM361-pipeline/analysis-sources.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/CM344-CM361-pipeline/analysis-sources.json",
+    "bytes": 530,
+    "sha256": "0f88e9a7cbcbe06975fec513d18a6c5bd097aa46c4944e0982e8af32d5d4d97d"
+  },
+  {
+    "source": "output/arc-semantics-audit-20261112/report.md",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/arc-semantics-audit-20261112/report.md",
+    "bytes": 3000,
+    "sha256": "b684ee3e6d13473cead61dd9862b937fe006ecbe2cc33b7faa7688e980813b65"
+  },
+  {
+    "source": "output/arc-semantics-audit-20261112/summary.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/arc-semantics-audit-20261112/summary.json",
+    "bytes": 7296,
+    "sha256": "01ccd510227ab4ae30bea6ecb8017ae48a08a7e2443cc1b010da6c6cfff32671"
+  },
+  {
+    "source": "output/arc-semantics-audit-20261112/rank0.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/arc-semantics-audit-20261112/rank0.json",
+    "bytes": 1349,
+    "sha256": "3fec2a7e7e8b3b4215d07efc9fae8b21fe828e044d9918cf856fda58dfc1831f"
+  },
+  {
+    "source": "output/arc-semantics-audit-20261112/rank1.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/arc-semantics-audit-20261112/rank1.json",
+    "bytes": 1349,
+    "sha256": "dce588b0029b968f346b6fb8aa9a5d950e896c0640a0ad3b026ac86622f5c664"
+  },
+  {
+    "source": "output/arc-semantics-audit-20261112/rank2.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/arc-semantics-audit-20261112/rank2.json",
+    "bytes": 1348,
+    "sha256": "ca6cbf416d3daa7805702db4f5c7a78ef53897a42acdc36de025d555d31c1fca"
+  },
+  {
+    "source": "output/arc-semantics-audit-20261112/rank3.json",
+    "archive": "docs/experiments/2026-11-12-arctopk-implementation/arc-semantics-audit-20261112/rank3.json",
+    "bytes": 1349,
+    "sha256": "bbc43dd4eb9ee698a15fdf31b42cffaee9661aa808085701951e7d8575a6d1ed"
+  }
+]

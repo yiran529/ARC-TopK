@@ -1,0 +1,85 @@
+{
+  "reason": "User requested no large run artifacts; per-rank summaries/configs/logs/source retained",
+  "files": [
+    {
+      "path": "CM327-m002-350m-fused-rep1-profile/collectives-rank3.json.gz",
+      "bytes": 16485408,
+      "sha256": "b6a4fe3afe9bc4fe15ffa490590521cd3070406643639b26c3cc9071cc27e621"
+    },
+    {
+      "path": "CM327-m002-350m-fused-rep1-profile/collectives-rank2.json.gz",
+      "bytes": 16450300,
+      "sha256": "4f020d6d41715feebfbd59be86eb3b96c26a514efcb90617f97df31da13cb6cd"
+    },
+    {
+      "path": "CM327-m002-350m-fused-rep1-profile/collectives-rank1.json.gz",
+      "bytes": 16480270,
+      "sha256": "6146e4f2b3e49a141d7905e1be075b69e4e3cd2474e8418e10001b11bb369367"
+    },
+    {
+      "path": "CM327-m002-350m-fused-rep1-profile/collectives-rank0.json.gz",
+      "bytes": 16206793,
+      "sha256": "15847a783432ecb32ba040bbff073932ae16acaf4ae016b52ad2ace594217685"
+    },
+    {
+      "path": "CM324-m002-350m-reference-rep1-profile/collectives-rank3.json.gz",
+      "bytes": 23339273,
+      "sha256": "99ea9633c5b1a48d1f4163a7cb46b4ee39f246cf096d8502622d3d25047e1a72"
+    },
+    {
+      "path": "CM324-m002-350m-reference-rep1-profile/collectives-rank2.json.gz",
+      "bytes": 23342137,
+      "sha256": "8ed2143d742f1becb9f3b0ae9d37191babb7b868896eb1fb0d46e384eea3be70"
+    },
+    {
+      "path": "CM324-m002-350m-reference-rep1-profile/collectives-rank1.json.gz",
+      "bytes": 23411067,
+      "sha256": "fada09a0d65de5ecc99d074d898fbeb33861eed2214c0f26fa99b084acf10d82"
+    },
+    {
+      "path": "CM324-m002-350m-reference-rep1-profile/collectives-rank0.json.gz",
+      "bytes": 23372999,
+      "sha256": "7ab05cbd663960644bae94d71fe58fc09f008ca8ad4c615fa813cfd724d2fa9f"
+    },
+    {
+      "path": "CM325-m001-350m-dense-rep1-profile/collectives-rank3.json.gz",
+      "bytes": 10644111,
+      "sha256": "b8c1d5b39611415d90b26cb04bd87f35e47a7ae0a41bf70ddcdedeff8a4524fa"
+    },
+    {
+      "path": "CM325-m001-350m-dense-rep1-profile/collectives-rank2.json.gz",
+      "bytes": 10643953,
+      "sha256": "9148a22b4dc638030840a65ac04825b16a658d0c1299509bb06a57b72f2d2e6e"
+    },
+    {
+      "path": "CM325-m001-350m-dense-rep1-profile/collectives-rank1.json.gz",
+      "bytes": 10677275,
+      "sha256": "c8dfa2665daaac1c18333bbf6be036ded091732a065c692eb51d28081d614776"
+    },
+    {
+      "path": "CM325-m001-350m-dense-rep1-profile/collectives-rank0.json.gz",
+      "bytes": 10640377,
+      "sha256": "7fb575f3b6c3bd5a662b9eefc0b35d0ec6ab7cf868efc1d3088079d94f9fe6e8"
+    },
+    {
+      "path": "CM326-m002-350m-optimized-rep1-profile/collectives-rank3.json.gz",
+      "bytes": 18157496,
+      "sha256": "57ae05a35b258ce9a93e4ee2a292e26cc364be8647af9fe1ab8c9597738e1f0c"
+    },
+    {
+      "path": "CM326-m002-350m-optimized-rep1-profile/collectives-rank2.json.gz",
+      "bytes": 18154183,
+      "sha256": "5fae1755233fefb7883e096033a9dc48f5c1b431287c6166797a8bcf2236b781"
+    },
+    {
+      "path": "CM326-m002-350m-optimized-rep1-profile/collectives-rank1.json.gz",
+      "bytes": 17904709,
+      "sha256": "7d7258c99a54a54bd442fba11e5818b08624776d37856821504cd0477ab2410e"
+    },
+    {
+      "path": "CM326-m002-350m-optimized-rep1-profile/collectives-rank0.json.gz",
+      "bytes": 18023130,
+      "sha256": "f18e7b710ac9a81e34b4922cb03e211edc30688d1f9b52170b4155f7a3eaadaf"
+    }
+  ]
+}

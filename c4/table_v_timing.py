@@ -264,6 +264,7 @@ def main():
             Path("comm_hooks/utils.py"),
             Path("comm_hooks/sparse_hook_c4.py"),
             Path("comm_hooks/group_topk_hook_no_reshape.py"),
+            Path("comm_hooks/arc_row_kernels.py"),
         ]
         config = vars(args).copy()
         config.update(
